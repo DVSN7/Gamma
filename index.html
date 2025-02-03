@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Shader Art</title>
+    <script src="https://ordinals.com/content/b6a50f5ba932b0ea7f652d9d28e59eced47bc6f8376c25e02d8b3457bb60ac8fi0"></script>
+    <meta charset="utf-8" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000000;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+        main {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            align-items: center;
+            height: 100%;
+        }
+    </style>
+  </head>
+  <body>
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec3 aPosition;
+        attribute vec2 aTexCoord;
+        varying vec2 vTexCoord;
+
+        void main() {
+            vTexCoord = aTexCoord;
+            vec4 positionVec4 = vec4(aPosition, 1.0);
+            positionVec4.xy = positionVec4.xy * 2.0 - 1.0;
+            gl_Position = positionVec4;
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        #ifdef GL_ES
+        precision mediump float;
+        #endif
+
+        #define M_PI 3.14159265358979323846
+
+        varying vec2 vTexCoord;
+        uniform vec2 u_resolution;
+        uniform float u_time;
+        uniform float u_cellSize;
+        uniform float u_noiseScale;
+        uniform float u_maxDepth;
+        uniform float u_flowSpeed;
+        uniform int u_paletteIndex1;
+        uniform int u_paletteIndex2;
+        uniform float u_noiseSeed;
+        uniform float u_randomScaleSeed;
+        uniform float u_rotationAngle;
+        uniform vec2 u_noiseOffset;
+        uniform float u_amplitude;
+        uniform float u_scaleFactor;
+        uniform vec2 u_translation;
+        uniform vec4 u_backgroundColor;
+        uniform float u_luminosity;
+        uniform float u_vibrancy;
+        uniform float u_initialFreq;
+
+        float random(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        float random(float x) {
+            return fract(sin(x) * 43758.5453);
+        }
+
+        float random(vec2 st, float seed) {
+            vec2 s = vec2(12.9898, 78.233);
+            return fract(sin(dot(st.xy + seed, s)));
+        }
+
+        float noise(vec2 st, float seed) {
+            vec2 i = floor(st);
+            vec2 f = fract(st);
+            
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            
+            float a = random(i, seed);
+            float b = random(i + vec2(1.0, 0.0), seed);
+            float c = random(i + vec2(0.0, 1.0), seed);
+            float d = random(i + vec2(1.0, 1.0), seed);
+            
+            return mix(
+                mix(a, b, u.x),
+                mix(c, d, u.x),
+                u.y);
+        }
+
+        vec3 mod289(vec3 x) { 
+            return x - floor(x / 289.0) * 289.0; 
+        }
+
+        vec2 mod289(vec2 x) { 
+            return x - floor(x / 289.0) * 289.0; 
+        }
+
+        vec3 permute(vec3 x) { 
+            return mod289((x * 34.0 + 1.0) * x); 
+        }
+
+        float simplexNoise(vec2 v, float time) {
+            const vec4 C = vec4(
+                0.211324865405187,
+                0.366025403784439,
+                -0.577350269189626,
+                0.024390243902439
+            );
+            
+            v += vec2(time * 0.03);
+            
+            vec2 i = floor(v + dot(v, C.yy));
+            vec2 x0 = v - i + dot(i, C.xx);
+            
+            vec2 i1 = x0.x > x0.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            vec4 x12 = vec4(x0.x + C.x, x0.y + C.x, x0.x + C.z, x0.y + C.z);
+            x12.xy -= i1;
+            
+            i = mod289(i);
+            vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+            
+            vec3 m = max(0.5 - vec3(
+                dot(x0, x0),
+                dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
+                dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
+            ), 0.0);
+            m = m * m * m * m;
+            
+            vec3 x = 2.0 * fract(p * C.www) - 1.0;
+            vec3 h = abs(x) - 0.5;
+            vec3 ox = floor(x + 0.5);
+            vec3 a0 = x - ox;
+            
+            m *= 1.792842914 - 0.853734721 * (a0 * a0 + h * h);
+            
+            vec3 g = vec3(
+                a0.x * x0.x + h.x * x0.y,
+                a0.y * x12.x + h.y * x12.y,
+                a0.z * x12.z + h.z * x12.w
+            );
+            
+            return 130.0 * dot(m, g);
+        }
+
+        float chaosNoise(vec2 p, float time) {
+            float x = p.x;
+            float y = p.y;
+            
+            float a = 10.0;
+            float b = 28.0;
+            float c = 8.0/3.0;
+            
+            float dt = 0.005 + sin(time * 0.1) * 0.002;
+            
+            float dx = sin(a * (y - x)) * dt;
+            float dy = (x * (b - time) - y - x * sin(time)) * dt;
+            
+            return fract(dx * dy * 43758.5453);
+        }
+
+        float turbulentNoise(vec2 p, float time) {
+            float t = time * 0.1;
+            float noise = 0.0;
+            float freq = 1.0;
+            float amp = 1.0;
+            mat2 rot = mat2(cos(t), -sin(t), sin(t), cos(t));
+            
+            for(int i = 0; i < 4; i++) {
+                p = rot * p;
+                noise += simplexNoise(p * freq, t) * amp;
+                freq *= 2.17;
+                amp *= 1.5;
+                rot *= 1.7;
+            }
+            
+            return noise;
+        }
+
+        vec2 domainWarp(vec2 p, float time) {
+            float distortion1 = simplexNoise(p * 0.3 + time * 0.001, time * 0.001);
+            float distortion2 = simplexNoise((p + vec2(5.2, 1.3)) * 0.2 - time * 0.0015, time * 0.001);
+            
+            return p + vec2(
+                distortion1 * 2.0 + sin(time * 0.1) * 0.5,
+                distortion2 * 2.0 + cos(time * 0.05) * 0.5
+            );
+        }
+
+        float layeredNoise(vec2 p, float time) {
+            vec2 warped = domainWarp(p, time);
+            
+            float mainLayer = simplexNoise(warped, time);
+            
+            float detail = simplexNoise(warped * 1.0 + mainLayer * 0.5, time * 0.3) * 0.5;
+            float background = simplexNoise(p * 0.1 + time * 0.01, time) * 0.3;
+            
+            return mainLayer * 0.6 + detail * 0.3 + background * 0.1;
+        }
+
+        float fbmSimplexNoise(vec2 v, int octaves) {
+            if (octaves <= 0) return 0.0;
+            
+            v += u_noiseOffset;
+            v += vec2(u_noiseSeed);
+            
+            const float PERSISTENCE = 0.15;
+            const float LACUNARITY = 0.04;
+            float INITIAL_FREQ = u_initialFreq;
+            
+            float total = 0.0;
+            float amplitude = u_amplitude;
+            float frequency = INITIAL_FREQ;
+            
+            vec2 warpedCoord = domainWarp(v, u_time * 0.1);
+            float basePattern = layeredNoise(warpedCoord, u_time);
+            
+            total = amplitude * basePattern;
+            
+            for(int i = 1; i < 4; i++) {
+                amplitude *= PERSISTENCE * (1.0 + float(i) * 0.3);
+                frequency *= LACUNARITY * (1.0 + sin(u_time * 0.1) * 0.2);
+                
+                float angle = float(i) * 0.8 + u_time * 0.05;
+                mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+                vec2 rotated = rot * warpedCoord;
+                
+                total += amplitude * layeredNoise(rotated * frequency, u_time * 0.9);
+            }
+            
+            float modulation = sin(u_time * 0.1) * 0.2 + 0.9;
+            total *= modulation;
+            
+            return total;
+        }
+
+        mat2 getRotationMatrix(float angle) {
+            float c = cos(angle);
+            float s = sin(angle);
+            return mat2(c, -s, s, c);
+        }
+
+        vec3 getColorFromPalette(int pIdx, float t) {
+            t = clamp(t, 0.0, 4.0) * 7.0;
+            
+            int segment = int(t);
+            float frac = t - float(segment);
+            
+            vec3 c1, c2, c3, c4, c5, c6, c7, c8;
+            
+            if (pIdx == 0) {
+                // Muted red palette
+                c1 = vec3(0.450, 0.250, 0.250);  // Dusty red
+                c2 = vec3(0.550, 0.300, 0.300);  // Muted rose
+                c3 = vec3(0.400, 0.200, 0.200);  // Deep muted red
+                c4 = vec3(0.650, 0.350, 0.350);  // Soft rust
+                c5 = vec3(0.350, 0.150, 0.150);  // Dark muted red
+                c6 = vec3(0.500, 0.250, 0.250);  // Medium dusty red
+                c7 = vec3(0.600, 0.300, 0.300);  // Light rust
+                c8 = vec3(0.300, 0.100, 0.100);  // Darkest muted red
+            } else if (pIdx == 1) {
+                // Neon red palette
+                c1 = vec3(1.000, 0.000, 0.000);  // Pure red
+                c2 = vec3(1.000, 0.200, 0.000);  // Hot red
+                c3 = vec3(1.000, 0.000, 0.200);  // Neon red-pink
+                c4 = vec3(1.000, 0.300, 0.000);  // Electric orange-red
+                c5 = vec3(1.000, 0.000, 0.300);  // Bright pink-red
+                c6 = vec3(1.000, 0.150, 0.000);  // Glowing red
+                c7 = vec3(1.000, 0.000, 0.150);  // Radiant red
+                c8 = vec3(1.000, 0.100, 0.100);  // Neon rose
+            } else if (pIdx == 2) {
+                // Red with complementary cyan
+                c1 = vec3(0.800, 0.100, 0.100);  // Medium red
+                c2 = vec3(0.000, 0.700, 0.800);  // Cyan (complement)
+                c3 = vec3(0.900, 0.200, 0.200);  // Bright red
+                c4 = vec3(0.000, 0.800, 0.900);  // Light cyan (complement)
+                c5 = vec3(0.700, 0.000, 0.000);  // Deep red
+                c6 = vec3(0.000, 0.600, 0.700);  // Dark cyan (complement)
+                c7 = vec3(1.000, 0.300, 0.300);  // Light red
+                c8 = vec3(0.600, 0.000, 0.000);  // Darkest red
+            } else if (pIdx == 3) {
+                // Red with analogous oranges and magentas
+                c1 = vec3(0.900, 0.100, 0.100);  // Pure red
+                c2 = vec3(0.900, 0.400, 0.100);  // Orange-red
+                c3 = vec3(0.900, 0.100, 0.400);  // Magenta-red
+                c4 = vec3(1.000, 0.500, 0.000);  // Bright orange
+                c5 = vec3(1.000, 0.000, 0.500);  // Bright magenta
+                c6 = vec3(0.800, 0.300, 0.000);  // Dark orange-red
+                c7 = vec3(0.800, 0.000, 0.300);  // Dark magenta-red
+                c8 = vec3(0.700, 0.100, 0.100);  // Deep red
+            } else if (pIdx == 4) {
+                // Muted yellow palette
+                c1 = vec3(0.600, 0.550, 0.300);  // Dusty yellow
+                c2 = vec3(0.700, 0.650, 0.400);  // Muted gold
+                c3 = vec3(0.550, 0.500, 0.250);  // Deep muted yellow
+                c4 = vec3(0.800, 0.750, 0.500);  // Soft wheat
+                c5 = vec3(0.500, 0.450, 0.200);  // Dark muted yellow
+                c6 = vec3(0.650, 0.600, 0.350);  // Medium dusty yellow
+                c7 = vec3(0.750, 0.700, 0.450);  // Light wheat
+                c8 = vec3(0.450, 0.400, 0.150);  // Darkest muted yellow
+            } else if (pIdx == 5) {
+                // Neon yellow palette (brighter version)
+                c1 = vec3(1.000, 0.900, 0.200);  // Bright yellow
+                c2 = vec3(1.000, 0.950, 0.300);  // Lemon yellow
+                c3 = vec3(1.000, 1.000, 0.400);  // Light yellow
+                c4 = vec3(1.000, 0.980, 0.500);  // Pale yellow
+                c5 = vec3(0.900, 0.850, 0.150);  // Deep yellow
+                c6 = vec3(0.950, 0.900, 0.250);  // Medium yellow
+                c7 = vec3(1.000, 0.950, 0.350);  // Bright lemon
+                c8 = vec3(0.850, 0.800, 0.100);  // Dark yellow
+            } else if (pIdx == 6) {
+                // Golden yellow with purple complements
+                c1 = vec3(0.800, 0.600, 0.000);  // Deep gold
+                c2 = vec3(0.500, 0.100, 0.900);  // Purple (complement)
+                c3 = vec3(0.900, 0.700, 0.000);  // Rich gold
+                c4 = vec3(0.600, 0.200, 1.000);  // Light purple (complement)
+                c5 = vec3(1.000, 0.800, 0.000);  // Bright gold
+                c6 = vec3(0.400, 0.000, 0.800);  // Dark purple (complement)
+                c7 = vec3(1.000, 0.850, 0.200);  // Light gold
+                c8 = vec3(0.700, 0.500, 0.000);  // Dark amber
+            } else if (pIdx == 7) {
+                // Yellow with analogous greens and oranges
+                c1 = vec3(1.000, 1.000, 0.000);  // Pure yellow
+                c2 = vec3(0.700, 1.000, 0.000);  // Yellow-green
+                c3 = vec3(1.000, 0.700, 0.000);  // Yellow-orange
+                c4 = vec3(0.500, 1.000, 0.000);  // Bright green
+                c5 = vec3(1.000, 0.500, 0.000);  // Bright orange
+                c6 = vec3(0.800, 1.000, 0.200);  // Light yellow-green
+                c7 = vec3(1.000, 0.800, 0.200);  // Light yellow-orange
+                c8 = vec3(0.900, 0.900, 0.000);  // Deep yellow
+            } else if (pIdx == 8) {
+                // Muted purple palette
+                c1 = vec3(0.400, 0.300, 0.450);  // Dusty purple
+                c2 = vec3(0.500, 0.400, 0.550);  // Muted lavender
+                c3 = vec3(0.350, 0.250, 0.400);  // Deep muted purple
+                c4 = vec3(0.600, 0.500, 0.650);  // Soft mauve
+                c5 = vec3(0.300, 0.200, 0.350);  // Dark muted purple
+                c6 = vec3(0.450, 0.350, 0.500);  // Medium dusty purple
+                c7 = vec3(0.550, 0.450, 0.600);  // Light mauve
+                c8 = vec3(0.250, 0.150, 0.300);  // Darkest muted purple
+            } else if (pIdx == 9) {
+                // Neon purple palette
+                c1 = vec3(0.800, 0.000, 1.000);  // Electric violet
+                c2 = vec3(1.000, 0.200, 1.000);  // Hot magenta
+                c3 = vec3(0.600, 0.000, 1.000);  // Neon purple
+                c4 = vec3(1.000, 0.000, 0.800);  // Electric pink
+                c5 = vec3(0.900, 0.100, 1.000);  // Bright violet
+                c6 = vec3(1.000, 0.000, 1.000);  // Pure magenta
+                c7 = vec3(0.700, 0.000, 1.000);  // Glowing purple
+                c8 = vec3(1.000, 0.150, 0.900);  // Neon pink
+            } else if (pIdx == 10) {
+                // Purple with complementary yellow
+                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
+                c2 = vec3(0.900, 0.800, 0.000);  // Golden yellow (complement)
+                c3 = vec3(0.600, 0.200, 0.800);  // Bright purple
+                c4 = vec3(1.000, 0.900, 0.200);  // Light yellow (complement)
+                c5 = vec3(0.400, 0.000, 0.600);  // Deep purple
+                c6 = vec3(0.800, 0.700, 0.000);  // Dark yellow (complement)
+                c7 = vec3(0.700, 0.300, 0.900);  // Light purple
+                c8 = vec3(0.300, 0.000, 0.500);  // Darkest purple
+            } else if (pIdx == 11) {
+                // Purple with analogous blues and magentas
+                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
+                c2 = vec3(0.300, 0.100, 0.800);  // Blue-purple
+                c3 = vec3(0.700, 0.100, 0.600);  // Magenta-purple
+                c4 = vec3(0.400, 0.050, 0.900);  // Deep blue-purple
+                c5 = vec3(0.800, 0.100, 0.500);  // Pink-purple
+                c6 = vec3(0.200, 0.050, 0.700);  // Dark blue-purple
+                c7 = vec3(0.900, 0.200, 0.600);  // Bright magenta-purple
+                c8 = vec3(0.600, 0.150, 0.800);  // Rich purple
+            } else if (pIdx == 12) {
+                // Muted blue palette
+                c1 = vec3(0.300, 0.350, 0.450);  // Dusty blue
+                c2 = vec3(0.400, 0.450, 0.550);  // Muted steel blue
+                c3 = vec3(0.250, 0.300, 0.400);  // Deep muted blue
+                c4 = vec3(0.500, 0.550, 0.650);  // Soft slate blue
+                c5 = vec3(0.200, 0.250, 0.350);  // Dark muted blue
+                c6 = vec3(0.350, 0.400, 0.500);  // Medium dusty blue
+                c7 = vec3(0.450, 0.500, 0.600);  // Light slate
+                c8 = vec3(0.150, 0.200, 0.300);  // Darkest muted blue
+            } else if (pIdx == 13) {
+                // Neon blue palette
+                c1 = vec3(0.000, 0.400, 1.000);  // Electric blue
+                c2 = vec3(0.000, 0.800, 1.000);  // Bright cyan
+                c3 = vec3(0.200, 0.600, 1.000);  // Neon sky blue
+                c4 = vec3(0.000, 1.000, 1.000);  // Pure cyan
+                c5 = vec3(0.000, 0.200, 1.000);  // Deep electric blue
+                c6 = vec3(0.400, 0.800, 1.000);  // Glowing light blue
+                c7 = vec3(0.000, 0.600, 1.000);  // Bright azure
+                c8 = vec3(0.200, 1.000, 1.000);  // Luminous cyan
+            } else if (pIdx == 14) {
+                // Blue with complementary orange
+                c1 = vec3(0.100, 0.300, 0.800);  // Medium blue
+                c2 = vec3(1.000, 0.500, 0.000);  // Orange (complement)
+                c3 = vec3(0.200, 0.400, 0.900);  // Bright blue
+                c4 = vec3(1.000, 0.600, 0.200);  // Light orange (complement)
+                c5 = vec3(0.000, 0.200, 0.700);  // Deep blue
+                c6 = vec3(0.900, 0.400, 0.000);  // Dark orange (complement)
+                c7 = vec3(0.300, 0.500, 1.000);  // Light blue
+                c8 = vec3(0.000, 0.100, 0.600);  // Darkest blue
+            } else if (pIdx == 15) {
+                // Blue with analogous cyans and violets
+                c1 = vec3(0.200, 0.400, 0.900);  // Pure blue
+                c2 = vec3(0.000, 0.600, 0.800);  // Blue-cyan
+                c3 = vec3(0.300, 0.200, 0.900);  // Blue-violet
+                c4 = vec3(0.000, 0.800, 0.800);  // Bright cyan
+                c5 = vec3(0.400, 0.100, 0.800);  // Bright violet
+                c6 = vec3(0.100, 0.500, 0.700);  // Dark blue-cyan
+                c7 = vec3(0.500, 0.300, 0.900);  // Light blue-violet
+                c8 = vec3(0.100, 0.300, 0.800);  // Deep blue
+            } else if (pIdx == 16) {
+                // Muted green palette
+                c1 = vec3(0.300, 0.400, 0.300);  // Dusty green
+                c2 = vec3(0.400, 0.500, 0.400);  // Muted sage
+                c3 = vec3(0.250, 0.350, 0.250);  // Deep muted green
+                c4 = vec3(0.500, 0.600, 0.500);  // Soft sage
+                c5 = vec3(0.200, 0.300, 0.200);  // Dark muted green
+                c6 = vec3(0.350, 0.450, 0.350);  // Medium forest
+                c7 = vec3(0.450, 0.550, 0.450);  // Light sage
+                c8 = vec3(0.150, 0.250, 0.150);  // Darkest forest
+            } else if (pIdx == 17) {
+                // Neon green palette
+                c1 = vec3(0.000, 1.000, 0.000);  // Pure neon green
+                c2 = vec3(0.200, 1.000, 0.200);  // Bright lime
+                c3 = vec3(0.000, 1.000, 0.400);  // Electric green
+                c4 = vec3(0.400, 1.000, 0.000);  // Acid green
+                c5 = vec3(0.000, 0.900, 0.200);  // Deep neon
+                c6 = vec3(0.200, 1.000, 0.600);  // Glowing green
+                c7 = vec3(0.600, 1.000, 0.200);  // Radioactive green
+                c8 = vec3(0.000, 1.000, 0.200);  // Luminous green
+            } else if (pIdx == 18) {
+                // Green with complementary magenta
+                c1 = vec3(0.200, 0.800, 0.200);  // Medium green
+                c2 = vec3(1.000, 0.200, 0.800);  // Magenta (complement)
+                c3 = vec3(0.300, 0.900, 0.300);  // Bright green
+                c4 = vec3(0.900, 0.100, 0.700);  // Deep magenta (complement)
+                c5 = vec3(0.100, 0.700, 0.100);  // Deep green
+                c6 = vec3(1.000, 0.300, 0.900);  // Light magenta (complement)
+                c7 = vec3(0.400, 1.000, 0.400);  // Light green
+                c8 = vec3(0.000, 0.600, 0.000);  // Darkest green
+            } else if (pIdx == 19) {
+                // Green with analogous yellow-greens and blue-greens
+                c1 = vec3(0.200, 0.800, 0.200);  // Pure green
+                c2 = vec3(0.600, 0.800, 0.000);  // Yellow-green
+                c3 = vec3(0.000, 0.800, 0.600);  // Blue-green
+                c4 = vec3(0.800, 1.000, 0.000);  // Bright yellow-green
+                c5 = vec3(0.000, 1.000, 0.800);  // Bright blue-green
+                c6 = vec3(0.400, 0.700, 0.000);  // Dark yellow-green
+                c7 = vec3(0.000, 0.700, 0.400);  // Dark blue-green
+                c8 = vec3(0.100, 0.600, 0.100);  // Deep green
+            } else if (pIdx == 20) {
+                // Muted orange palette
+                c1 = vec3(0.600, 0.400, 0.300);  // Dusty orange
+                c2 = vec3(0.700, 0.450, 0.350);  // Muted terracotta
+                c3 = vec3(0.550, 0.350, 0.250);  // Deep muted orange
+                c4 = vec3(0.800, 0.500, 0.400);  // Soft peach
+                c5 = vec3(0.500, 0.300, 0.200);  // Dark rust
+                c6 = vec3(0.650, 0.400, 0.300);  // Medium clay
+                c7 = vec3(0.750, 0.450, 0.350);  // Light terracotta
+                c8 = vec3(0.450, 0.250, 0.150);  // Darkest rust
+            } else if (pIdx == 21) {
+                // Neon orange palette
+                c1 = vec3(1.000, 0.500, 0.000);  // Pure neon orange
+                c2 = vec3(1.000, 0.600, 0.200);  // Electric orange
+                c3 = vec3(1.000, 0.400, 0.000);  // Bright orange
+                c4 = vec3(1.000, 0.700, 0.300);  // Glowing tangerine
+                c5 = vec3(1.000, 0.300, 0.000);  // Deep neon orange
+                c6 = vec3(1.000, 0.800, 0.400);  // Luminous peach
+                c7 = vec3(1.000, 0.500, 0.200);  // Radiant orange
+                c8 = vec3(1.000, 0.600, 0.000);  // Blazing orange
+            } else if (pIdx == 22) {
+                // Orange with complementary blue
+                c1 = vec3(1.000, 0.500, 0.000);  // Medium orange
+                c2 = vec3(0.000, 0.400, 1.000);  // Blue (complement)
+                c3 = vec3(1.000, 0.600, 0.200);  // Bright orange
+                c4 = vec3(0.200, 0.500, 1.000);  // Light blue (complement)
+                c5 = vec3(0.900, 0.400, 0.000);  // Deep orange
+                c6 = vec3(0.000, 0.300, 0.900);  // Dark blue (complement)
+                c7 = vec3(1.000, 0.700, 0.300);  // Light orange
+                c8 = vec3(0.800, 0.300, 0.000);  // Darkest orange
+            } else if (pIdx == 23) {
+                // Orange with analogous reds and yellows
+                c1 = vec3(1.000, 0.500, 0.000);  // Pure orange
+                c2 = vec3(1.000, 0.300, 0.000);  // Red-orange
+                c3 = vec3(1.000, 0.700, 0.000);  // Yellow-orange
+                c4 = vec3(1.000, 0.200, 0.000);  // Bright red-orange
+                c5 = vec3(1.000, 0.800, 0.000);  // Bright yellow-orange
+                c6 = vec3(0.900, 0.400, 0.000);  // Deep orange-red
+                c7 = vec3(1.000, 0.600, 0.200);  // Light orange
+                c8 = vec3(0.800, 0.400, 0.000);  // Deep orange
+            } else if (pIdx == 24) {
+                // Muted monochrome palette
+                c1 = vec3(0.400, 0.400, 0.400);  // Medium gray
+                c2 = vec3(0.500, 0.500, 0.500);  // Warm gray
+                c3 = vec3(0.350, 0.350, 0.350);  // Cool gray
+                c4 = vec3(0.600, 0.600, 0.600);  // Light gray
+                c5 = vec3(0.300, 0.300, 0.300);  // Dark gray
+                c6 = vec3(0.450, 0.450, 0.450);  // Neutral gray
+                c7 = vec3(0.550, 0.550, 0.550);  // Soft gray
+                c8 = vec3(0.250, 0.250, 0.250);  // Deep gray
+            } else if (pIdx == 25) {
+                // High contrast monochrome
+                c1 = vec3(1.000, 1.000, 1.000);  // Pure white
+                c2 = vec3(0.000, 0.000, 0.000);  // Pure black
+                c3 = vec3(0.900, 0.900, 0.900);  // Bright white
+                c4 = vec3(0.100, 0.100, 0.100);  // Deep black
+                c5 = vec3(0.800, 0.800, 0.800);  // Light white
+                c6 = vec3(0.200, 0.200, 0.200);  // Soft black
+                c7 = vec3(0.950, 0.950, 0.950);  // Brilliant white
+                c8 = vec3(0.050, 0.050, 0.050);  // Rich black
+            } else if (pIdx == 26) {
+                // Complementary monochrome (alternating dark/light)
+                c1 = vec3(0.100, 0.100, 0.100);  // Near black
+                c2 = vec3(0.900, 0.900, 0.900);  // Near white
+                c3 = vec3(0.200, 0.200, 0.200);  // Dark gray
+                c4 = vec3(0.800, 0.800, 0.800);  // Light gray
+                c5 = vec3(0.300, 0.300, 0.300);  // Medium dark
+                c6 = vec3(0.700, 0.700, 0.700);  // Medium light
+                c7 = vec3(0.400, 0.400, 0.400);  // Mid gray
+                c8 = vec3(0.600, 0.600, 0.600);  // Light mid gray
+            } else if (pIdx == 27) {
+                // Smooth gradient monochrome
+                c1 = vec3(0.000, 0.000, 0.000);  // Black
+                c2 = vec3(0.150, 0.150, 0.150);  // Very dark gray
+                c3 = vec3(0.300, 0.300, 0.300);  // Dark gray
+                c4 = vec3(0.450, 0.450, 0.450);  // Medium dark gray
+                c5 = vec3(0.600, 0.600, 0.600);  // Medium light gray
+                c6 = vec3(0.750, 0.750, 0.750);  // Light gray
+                c7 = vec3(0.900, 0.900, 0.900);  // Very light gray
+                c8 = vec3(1.000, 1.000, 1.000);  // White
+            } else if (pIdx == 28) {
+                // Triadic: Red, Blue, Yellow
+                c1 = vec3(1.000, 0.200, 0.200);  // Bright red
+                c2 = vec3(0.200, 0.200, 1.000);  // Bright blue
+                c3 = vec3(1.000, 1.000, 0.200);  // Bright yellow
+                c4 = vec3(0.800, 0.100, 0.100);  // Deep red
+                c5 = vec3(0.100, 0.100, 0.800);  // Deep blue
+                c6 = vec3(0.800, 0.800, 0.100);  // Deep yellow
+                c7 = vec3(1.000, 0.300, 0.300);  // Light red
+                c8 = vec3(0.300, 0.300, 1.000);  // Light blue
+            } else if (pIdx == 29) {
+                // Triadic: Purple, Green, Orange
+                c1 = vec3(0.800, 0.200, 1.000);  // Bright purple
+                c2 = vec3(0.200, 0.800, 0.200);  // Bright green
+                c3 = vec3(1.000, 0.600, 0.000);  // Bright orange
+                c4 = vec3(0.600, 0.100, 0.800);  // Deep purple
+                c5 = vec3(0.100, 0.600, 0.100);  // Deep green
+                c6 = vec3(0.800, 0.400, 0.000);  // Deep orange
+                c7 = vec3(1.000, 0.400, 1.000);  // Light purple
+                c8 = vec3(0.400, 1.000, 0.400);  // Light green
+            } else if (pIdx == 30) {
+                // Triadic: Cyan, Magenta, Yellow
+                c1 = vec3(0.000, 1.000, 1.000);  // Bright cyan
+                c2 = vec3(1.000, 0.000, 1.000);  // Bright magenta
+                c3 = vec3(1.000, 1.000, 0.000);  // Bright yellow
+                c4 = vec3(0.000, 0.800, 0.800);  // Deep cyan
+                c5 = vec3(0.800, 0.000, 0.800);  // Deep magenta
+                c6 = vec3(0.800, 0.800, 0.000);  // Deep yellow
+                c7 = vec3(0.400, 1.000, 1.000);  // Light cyan
+                c8 = vec3(1.000, 0.400, 1.000);  // Light magenta
+            } else if (pIdx == 31) {
+                // Triadic: Blue-Green, Red-Orange, Purple-Blue
+                c1 = vec3(0.000, 0.800, 0.600);  // Blue-green
+                c2 = vec3(1.000, 0.400, 0.200);  // Red-orange
+                c3 = vec3(0.400, 0.200, 1.000);  // Purple-blue
+                c4 = vec3(0.000, 1.000, 0.800);  // Bright blue-green
+                c5 = vec3(1.000, 0.600, 0.400);  // Bright red-orange
+                c6 = vec3(0.600, 0.400, 1.000);  // Bright purple-blue
+                c7 = vec3(0.200, 0.600, 0.400);  // Deep blue-green
+                c8 = vec3(0.800, 0.200, 0.000);  // Deep red-orange
+            } else if (pIdx == 32) {
+                // Triadic: Yellow-Green, Blue-Violet, Red-Orange
+                c1 = vec3(0.600, 1.000, 0.000);  // Yellow-green
+                c2 = vec3(0.400, 0.000, 1.000);  // Blue-violet
+                c3 = vec3(1.000, 0.400, 0.000);  // Red-orange
+                c4 = vec3(0.800, 1.000, 0.200);  // Bright yellow-green
+                c5 = vec3(0.600, 0.200, 1.000);  // Bright blue-violet
+                c6 = vec3(1.000, 0.600, 0.200);  // Bright red-orange
+                c7 = vec3(0.400, 0.800, 0.000);  // Deep yellow-green
+                c8 = vec3(0.200, 0.000, 0.800);  // Deep blue-violet
+            } else if (pIdx == 33) {
+                // Triadic: Teal, Violet, Gold
+                c1 = vec3(0.000, 0.600, 0.600);  // Teal
+                c2 = vec3(0.600, 0.000, 0.800);  // Violet
+                c3 = vec3(1.000, 0.800, 0.000);  // Gold
+                c4 = vec3(0.200, 0.800, 0.800);  // Bright teal
+                c5 = vec3(0.800, 0.200, 1.000);  // Bright violet
+                c6 = vec3(1.000, 1.000, 0.200);  // Bright gold
+                c7 = vec3(0.000, 0.400, 0.400);  // Deep teal
+                c8 = vec3(0.400, 0.000, 0.600);  // Deep violet
+            }
+
+
+            vec3 color1, color2;
+            if (segment == 0) { color1 = c1; color2 = c2; }
+            else if (segment == 1) { color1 = c2; color2 = c3; }
+            else if (segment == 2) { color1 = c3; color2 = c4; }
+            else if (segment == 3) { color1 = c4; color2 = c5; }
+            else if (segment == 4) { color1 = c5; color2 = c6; }
+            else if (segment == 5) { color1 = c6; color2 = c7; }
+            else { color1 = c7; color2 = c8; }
+            
+            return mix(color1, color2, smoothstep(0.1, 0.9, frac));
+        }
+
+        vec3 enhanceColor(vec3 color, float noiseValue) {
+            const vec3 luminanceWeights = vec3(0.2126, 0.7152, 0.0722);
+            float luminance = dot(color, luminanceWeights);
+            
+            float noiseInfluence = 1.0 + noiseValue * 0.1;
+            vec3 boosted = color * (1.0 + (1.0 - luminance) * 1.5 * noiseInfluence);
+            
+            vec3 saturated = mix(
+                vec3(luminance),
+                boosted,
+                vec3(2.0)
+            );
+            
+            vec3 contrasted = pow(saturated, vec3(0.9));
+            
+            float highlightThreshold = 0.85;
+            vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
+            contrasted = mix(contrasted, highlights * 0.8, 0.2);
+            
+            return contrasted * 0.85;
+        }
+
+        vec3 blendColors(vec3 a, vec3 b, float factor) {
+            float rotationInfluence = (1.0 + sin(u_rotationAngle + u_time * 0.1)) * 0.5;
+            vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 0.8);
+            vec3 add = a + b * factor * 0.3;
+            
+            return mix(screen, add, 2.5 + rotationInfluence);
+        }
+
+        void main() {
+            vec2 coord = (vTexCoord * u_resolution - u_resolution * 0.25) * u_scaleFactor + u_translation;
+            vec2 gridCoord = floor(coord / u_cellSize);
+            vec2 cellCenter = gridCoord * u_cellSize + u_cellSize * 0.5;
+            
+            float distToCenter = length(coord - cellCenter);
+            if (distToCenter > u_cellSize * 0.4) {
+                discard;
+            }
+            
+            float timeScale = u_time * 0.1;
+            vec2 baseNoiseCoord = gridCoord * 0.05;
+            vec2 timeOffset = vec2(timeScale, timeScale + 100.0);
+            
+            float baseNoiseFBM = fbmSimplexNoise(gridCoord * 0.05, 4);
+
+            vec2 noiseOffset = vec2(
+                noise(baseNoiseCoord + timeOffset.xx, u_noiseSeed),
+                noise(baseNoiseCoord + timeOffset.yy, u_noiseSeed)
+            );
+            
+            float gridSize = u_cellSize * mix(0.3, 2.5, baseNoiseFBM);
+            vec2 localCoord = mod(coord + noiseOffset, gridSize);
+            
+            float randomAngle = floor(noise(gridCoord + noiseOffset, u_noiseSeed) * 4.0) * (M_PI * 0.5);
+            mat2 rotationMatrix = getRotationMatrix(randomAngle);
+            vec2 rotatedCoord = rotationMatrix * localCoord;
+            
+            float smoothedTime = u_time * 0.01 + sin(u_time * 0.005) * 0.005;
+            
+            vec2 noiseInput1 = rotatedCoord * 0.05 + smoothedTime;
+            vec2 noiseInput2 = (rotatedCoord + gridCoord * gridSize) * u_noiseScale;
+            
+            float flowNoise = fbmSimplexNoise(noiseInput1, 6);
+            vec2 animatedCoord = noiseInput2 + vec2(
+                cos(flowNoise * 6.28318), 
+                sin(flowNoise * 6.28318)
+            ) * u_flowSpeed * 0.005;
+            
+            float curlNoise = fbmSimplexNoise(animatedCoord * 1.5 + vec2(u_noiseSeed), 8);
+            animatedCoord += 4.0 * vec2(
+                cos(curlNoise * 6.28318),
+                sin(curlNoise * 6.28318)
+            );
+
+            float baseNoise = fbmSimplexNoise(animatedCoord + noiseOffset, 5);
+
+            vec4 color = vec4(0.0);
+            const int MAX_LOOP_DEPTH = 8;
+
+            float combinedNoise = (baseNoise * 0.3 + baseNoiseFBM * 0.7 + 1.0) * 0.3;
+            
+            int dynamicDepth = int(mod(combinedNoise * float(u_maxDepth), float(u_maxDepth))) + 1;
+            
+            float t = 0.5 + 0.5 * sin(u_time * 2.0 * u_flowSpeed);
+            float angleInfluence = sin(u_rotationAngle * 0.1 + u_time * 0.2) * 0.5 + 0.5;
+            float blendFactor = t * t * (3.0 - 2.0 * t) * (1.0 + combinedNoise * 0.6 + angleInfluence);
+            
+            int paletteIndex1 = int(u_paletteIndex1);
+            int paletteIndex2 = int(u_paletteIndex2);
+            
+            for (int depth = 0; depth < MAX_LOOP_DEPTH; depth++) {
+                if (depth >= dynamicDepth) break;
+                
+                float depthNoiseValue = noise(animatedCoord * float(depth + 1), u_noiseSeed);
+                
+                float threshold = 0.6 + combinedNoise * 0.6;
+                if (depthNoiseValue > threshold) {
+                    float size = gridSize / exp2(float(depth));
+                    vec2 cellCoord = mod(coord, size);
+                    
+                    if (cellCoord.x < size * 0.5 && cellCoord.y < size * 0.5) {
+                        float depthFactor = float(depth) / float(MAX_LOOP_DEPTH);
+                        //float colorT = smoothstep(0.2, 0.8, depthFactor + combinedNoise * 0.6);
+                        // Oscillating edges
+float edge0 = 0.2 + sin(u_time * 0.05) * 0.2;
+float edge1 = 0.8 + cos(u_time * 0.05) * 0.2;
+float colorT = smoothstep(edge0, edge1, depthFactor + combinedNoise * 0.6);
+
+
+// try to add more complementary base palettes //NOTE TO SELF
+
+
+
+                        vec3 color1 = getColorFromPalette(paletteIndex1, colorT);
+                        vec3 color2 = getColorFromPalette(paletteIndex2, 1.0 - colorT);
+
+                        float depthBoost = 1.0 + (1.0 - depthFactor) * 0.5;
+                        color1 *= depthBoost;
+                        color2 *= depthBoost;
+                        
+                        vec3 enhancedColor1 = enhanceColor(color1, combinedNoise);
+                        vec3 enhancedColor2 = enhanceColor(color2, combinedNoise);
+                        
+                        vec3 blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
+                        
+                        color.rgb *= 1.0;
+                        color += vec4(blendedColor, 1.0) * (1.0 - depthNoiseValue * 0.5);
+                    }
+                }
+            }
+            
+            if (color.a == 0.0) {
+                color = vec4(0.0, 0.0, 0.0, 1.0);
+            }
+            
+            gl_FragColor = color;
+        }
+    </script>
+
+    <script>
+        let fpsHistory = [];
+        let maxHistoryLength = 60;
+        let theShader;
+        let displayMode = 0;
+        let cellSize = 100;
+        let noiseScale = 0.0001;
+        let maxDepth;
+        let noiseSeed;
+        let flowSpeed = 0.005;
+        let paletteIndex1, paletteIndex2;
+        let randomScaleSeed;
+        let rotationAngle;
+        let noiseOffsetX, noiseOffsetY;
+        let scaleFactor = 30;
+        let translateX = 0, translateY = 0;
+        let initialTranslateX = 0, initialTranslateY = 0;
+        let previousMouseX, previousMouseY;
+        let amplitudeValues = [0.05, 0.075, 0.1];
+        let isPlaying = true;
+        let startTime = 0;
+        let pausedTime = 0;
+        let currentTime = 0;
+        let luminosity = 1.5;
+        let vibrancy = 5.5;
+        const ADJUST_STEP = 0.1;
+
+        let seedHash = shift_hash(Date.now().toString());
+
+        function shift_hash(inscription_id) {
+            var b = inscription_id;
+            var intshift = parseInt(b.split('i')[1]) || 0;
+            var barr = b.split('');
+            for (let v = 0; v < intshift; v++) {
+                var newb = barr.shift();
+                barr.push(newb);
+            }
+            b = barr.join('');
+            const maxValue = 1400000000;
+            let hash = 0;
+            const prime = 31;
+            for (let i = 0; i < b.length; i++) {
+                hash = (hash * prime + b.charCodeAt(i)) % Number.MAX_SAFE_INTEGER;
+            }
+            return hash % maxValue;
+        }
+
+        function preload() {
+            let vertexShader = document.getElementById('vertex-shader').textContent;
+            let fragmentShader = document.getElementById('fragment-shader').textContent;
+            theShader = createShader(vertexShader, fragmentShader);
+        }
+
+        function updateTranslationForCenter() {
+            let visibleWidth = width / scaleFactor;
+            let visibleHeight = height / scaleFactor;
+            
+            translateX = -width/2 + (visibleWidth * scaleFactor/2);
+            translateY = -height/2 + (visibleHeight * scaleFactor/2);
+        }
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight, WEBGL);
+            noStroke();
+            shader(theShader);
+            pixelDensity(2);
+            
+            updateCanvasSize();
+            
+            noiseOffsetX = (seedHash * 17) % 2000;
+            noiseOffsetY = (seedHash * 23) % 2000;
+
+            let shiftX = -width/2;
+            let shiftY = -height/2;
+            initialTranslateX = shiftX;
+            initialTranslateY = shiftY;
+            translateX = shiftX;
+            translateY = shiftY;
+
+            noiseSeed = seedHash % 1000;
+
+            let u_maxDepth = 100 + (seedHash * 41) % 901;
+
+            paletteIndex1 = int(seedHash % 34);
+            paletteIndex2 = int((seedHash * 31) % 34);
+
+            randomScaleSeed = (seedHash * 31) % 1000;
+
+            rotationAngle = (seedHash % 360);
+
+            let randomAmplitude = amplitudeValues[int((seedHash * 13) % amplitudeValues.length)];
+
+            let initialFreqOptions = [0.00005, 0.0005, 0.005];
+            let selectedFreq = initialFreqOptions[int((seedHash * 19) % 3)];
+
+            theShader.setUniform('u_paletteIndex1', paletteIndex1);
+            theShader.setUniform('u_paletteIndex2', paletteIndex2);
+            theShader.setUniform('u_noiseSeed', noiseSeed);
+            theShader.setUniform('u_randomScaleSeed', randomScaleSeed);
+            theShader.setUniform('u_rotationAngle', radians(rotationAngle));
+            theShader.setUniform('u_noiseOffset', [noiseOffsetX, noiseOffsetY]);
+            theShader.setUniform('u_amplitude', randomAmplitude);
+            theShader.setUniform('u_maxDepth', u_maxDepth);
+            theShader.setUniform('u_backgroundColor', [0.0, 0.0, 0.0, 1.0]);
+            theShader.setUniform('u_luminosity', luminosity);
+            theShader.setUniform('u_vibrancy', vibrancy);
+            theShader.setUniform('u_initialFreq', selectedFreq);
+
+            scaleFactor = 30;
+            updateTranslationForCenter();
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'a' || e.key === 'A') {
+                    displayMode = (displayMode + 1) % 3;
+                    updateCanvasSize();
+                    console.log('Display mode:', ['fullscreen', '16:9', '9:16'][displayMode]);
+                }
+                if (e.key === 'r' || e.key === 'R') {
+                    updateTranslationForCenter();
+                    scaleFactor = 30;
+                    console.log('Position reset');
+                }
+                if (e.key === 's' || e.key === 'S') {
+                    isPlaying = !isPlaying;
+                    if (isPlaying) {
+                        startTime = millis() - currentTime * 1000;
+                    } else {
+                        currentTime = (millis() - startTime) / 1000.0;
+                    }
+                    console.log('Animation ' + (isPlaying ? 'playing' : 'paused'));
+                }
+                if (e.key === '1') {
+                    let currentDensity = pixelDensity();
+                    
+                    pixelDensity(4);
+                    
+                    draw();
+                    
+                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
+                    saveCanvas('shader_' + timestamp, 'png');
+                    
+                    pixelDensity(currentDensity);
+                    
+                    draw();
+                    
+                    console.log('Canvas saved as shader_' + timestamp + '.png');
+                }
+                if (e.key === '2') {
+                    let currentDensity = pixelDensity();
+                    
+                    pixelDensity(5);
+                    
+                    draw();
+                    
+                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
+                    saveCanvas('shader_hires_' + timestamp, 'png');
+                    
+                    pixelDensity(currentDensity);
+                    
+                    draw();
+                    
+                    console.log('High-res canvas saved as shader_hires_' + timestamp + '.png');
+                }
+                if (e.key === '3') {
+                    let currentDensity = pixelDensity();
+                    
+                    pixelDensity(5.5);
+                    
+                    draw();
+                    
+                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
+                    saveCanvas('shader_hires_' + timestamp, 'png');
+                    
+                    pixelDensity(currentDensity);
+                    
+                    draw();
+                    
+                    console.log('Very high-res canvas saved as shader_hires_' + timestamp + '.png');
+                }
+                if (e.key === 'd' || e.key === 'D') {
+                    if (scaleFactor === 30) scaleFactor = 10;
+                    else scaleFactor = 30;
+                    updateTranslationForCenter();
+                    console.log('Scale factor:', scaleFactor);
+                }
+            });
+            startTime = millis();
+        }
+
+        function draw() {
+            clear();
+            background(0);
+            
+            if (isPlaying) {
+                currentTime = (millis() - startTime) / 1000.0;
+            }
+
+            if (mouseIsPressed && mouseButton === LEFT) {
+                if (previousMouseX !== undefined && previousMouseY !== undefined) {
+                    let deltaX = mouseX - previousMouseX;
+                    let deltaY = mouseY - previousMouseY;
+                    translateX -= deltaX;
+                    translateY += deltaY;
+                }
+                previousMouseX = mouseX;
+                previousMouseY = mouseY;
+            } else {
+                previousMouseX = undefined;
+                previousMouseY = undefined;
+            }
+
+            theShader.setUniform('u_scaleFactor', scaleFactor);
+            theShader.setUniform('u_translation', [translateX, translateY]);
+            theShader.setUniform('u_resolution', [width, height]);
+            theShader.setUniform('u_time', currentTime);
+            theShader.setUniform('u_cellSize', cellSize);
+            theShader.setUniform('u_noiseScale', noiseScale);
+            theShader.setUniform('u_flowSpeed', flowSpeed);
+            theShader.setUniform('u_backgroundColor', [0.0, 0.0, 0.0, 1.0]);
+            theShader.setUniform('u_luminosity', luminosity);
+            theShader.setUniform('u_vibrancy', vibrancy);
+
+            beginShape();
+            vertex(0, 0, 0, 0, 0);
+            vertex(2, 0, 0, 1, 0);
+            vertex(2, 2, 0, 1, 1);
+            vertex(0, 2, 0, 0, 1);
+            endShape(CLOSE);
+        }
+
+        function updateCanvasSize() {
+            let newWidth, newHeight;
+            
+            switch(displayMode) {
+                case 0:
+                    resizeCanvas(windowWidth, windowHeight);
+                    break;
+                
+                case 1:
+                    if (windowWidth < windowHeight) {
+                        newWidth = windowWidth;
+                        newHeight = windowWidth;
+                    } else {
+                        newHeight = windowHeight;
+                        newWidth = windowHeight;
+                    }
+                    resizeCanvas(newWidth, newHeight);
+                    break;
+                
+                case 2:
+                    if (windowWidth / windowHeight > 2/3) {
+                        newHeight = windowHeight;
+                        newWidth = (windowHeight * 2) / 3;
+                    } else {
+                        newWidth = windowWidth;
+                        newHeight = (windowWidth * 3) / 2;
+                    }
+                    resizeCanvas(newWidth, newHeight);
+                    break;
+            }
+            
+            updateTranslationForCenter();
+            
+            let canvas = document.querySelector('canvas');
+            canvas.style.position = 'absolute';
+            canvas.style.left = '50%';
+            canvas.style.top = '50%';
+            canvas.style.transform = 'translate(-50%, -50%)';
+        }
+
+        function windowResized() {
+            updateCanvasSize();
+        }
+    </script>
+  </body>
+</html>
