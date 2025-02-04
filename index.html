@@ -696,12 +696,14 @@
         let totalPausedTime = 0; // Track total paused time
         let luminosity = 2.5;
         let vibrancy = 7.5;
-        let targetFrameRate = 30;  // Minimum acceptable FPS
+        let targetFrameRate = 45;           // Target FPS
+        let currentPixelDensity = 1.5;      // Start with medium quality
+        let minPixelDensity = 1.0;          // Minimum acceptable quality
+        let maxPixelDensity = 2.5;          // Maximum quality
         let fpsHistory = [];
-        let fpsHistoryLength = 30;  // Number of frames to average
-        let currentPixelDensity = 2;  // Start with your current pixel density
+        let fpsHistoryLength = 30;
         let lastAdjustTime = 0;
-        let adjustCooldown = 1000;  // Wait 1 second between adjustments
+        let adjustCooldown = 2000;          // Check every 2 seconds
 
         let inscription_id = window.location.pathname.split("/").pop();
         
@@ -886,51 +888,13 @@
             });
             startTime = millis();
 
-            // Device and performance detection
-            let isLowEnd = false;
-            let isMidRange = false;
-            let isHighEnd = false;
-
-            // Check if mobile
-            let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-            
-            // Check if low-end device (mobile or old laptop)
-            if (isMobile || window.navigator.hardwareConcurrency <= 4) {
-                isLowEnd = true;
-            }
-            // Check if high-end device
-            else if (window.navigator.hardwareConcurrency >= 8) {
-                isHighEnd = true;
-            }
-            // Everything else is mid-range
-            else {
-                isMidRange = true;
-            }
-
-            // Set performance parameters based on device category
-            if (isLowEnd) {
-                currentPixelDensity = 1;    // Lower resolution
-                targetFrameRate = 24;       // Lower target FPS
-            } else if (isMidRange) {
-                currentPixelDensity = 1;    // Standard resolution
-                targetFrameRate = 30;       // Standard target FPS
-            } else {
-                currentPixelDensity = 2;    // High resolution
-                targetFrameRate = 45;       // Higher target FPS
-            }
-
-            // Additional performance scaling
-            if (!isMobile && window.navigator.hardwareConcurrency >= 12) {
-                // For very high-end devices
-                currentPixelDensity = 2.5;  // Even higher resolution
-                targetFrameRate = 60;       // Maximum target FPS
-            }
-
+            // Start with medium settings and let performance adjust
             pixelDensity(currentPixelDensity);
-            
-            // Log device category (optional)
-            //console.log('Device category:', isLowEnd ? 'Low-end' : isMidRange ? 'Mid-range' : 'High-end');
-            //console.log('Pixel Density:', currentPixelDensity, 'Target FPS:', targetFrameRate);
+
+            console.log('Initial Performance Settings:', {
+                targetFPS: targetFrameRate,
+                pixelDensity: currentPixelDensity
+            });
         }
 
         function calculateAverageFPS() {
@@ -939,23 +903,41 @@
         }
 
         function draw() {
-            // Update timing
             let now = millis();
             
             if (isPlaying) {
                 currentTime = (now - startTime - totalPausedTime) / 1000.0;
                 
-                // Only calculate FPS and adjust resolution when playing
+                // Performance monitoring
                 let currentFPS = frameRate();
                 fpsHistory.push(currentFPS);
                 if (fpsHistory.length > fpsHistoryLength) {
                     fpsHistory.shift();
                 }
 
-                // Performance check
+                // Adjust quality based on performance
                 if (now - lastAdjustTime > adjustCooldown) {
                     let avgFPS = calculateAverageFPS();
-                    // ... resolution adjustment code ...
+                    
+                    if (avgFPS < targetFrameRate * 0.9) {  // Below target
+                        // Reduce quality
+                        if (currentPixelDensity > minPixelDensity) {
+                            currentPixelDensity = Math.max(minPixelDensity, 
+                                currentPixelDensity - 0.25);
+                            pixelDensity(currentPixelDensity);
+                            console.log('Reducing quality - FPS:', avgFPS.toFixed(1), 
+                                'New density:', currentPixelDensity.toFixed(2));
+                        }
+                    } else if (avgFPS > targetFrameRate * 1.1 && 
+                             currentPixelDensity < maxPixelDensity) {
+                        // Increase quality if we have headroom
+                        currentPixelDensity = Math.min(maxPixelDensity, 
+                            currentPixelDensity + 0.25);
+                        pixelDensity(currentPixelDensity);
+                        console.log('Increasing quality - FPS:', avgFPS.toFixed(1), 
+                            'New density:', currentPixelDensity.toFixed(2));
+                    }
+                    
                     lastAdjustTime = now;
                 }
             }
