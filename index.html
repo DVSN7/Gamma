@@ -694,7 +694,12 @@
         let currentTime = 0;
         let luminosity = 1.5;
         let vibrancy = 5.5;
-
+        let targetFrameRate = 30;  // Minimum acceptable FPS
+        let fpsHistory = [];
+        let fpsHistoryLength = 30;  // Number of frames to average
+        let currentPixelDensity = 2;  // Start with your current pixel density
+        let lastAdjustTime = 0;
+        let adjustCooldown = 1000;  // Wait 1 second between adjustments
 
         let inscription_id = window.location.pathname.split("/").pop();
         
@@ -711,8 +716,6 @@
         // d22y74bs6dlq3o23d4zl2cjkge8rqsewu2nh393b7ds87ts5wvla50hrhln99lbf
         // wraa45m0mfd2to4l1gfer4h2nawueqsf4ynjyoby8hdya62zamvbhzsir45hstot
 
-
-
         // Class to use inscription ID hash as a PRNG (PseudoRandom Number Generator).
         // Helpful with vanilla JS.
         // Can be replaced or removed if you use another PRNG.
@@ -728,7 +731,6 @@
         let R = new Rnd(inscription_id)
 
         console.log('Inscription ID:', inscription_id)
-
 
         function updateTranslationForCenter() {
             let visibleWidth = width / scaleFactor;
@@ -881,9 +883,55 @@
                 }
             });
             startTime = millis();
+
+            // Set initial pixel density based on device
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                currentPixelDensity = 1;  // Start lower on mobile devices
+                targetFrameRate = 30;     // Lower target FPS for mobile
+            } else {
+                currentPixelDensity = 2;  // Start higher on desktop
+                targetFrameRate = 45;     // Higher target FPS for desktop
+            }
+            pixelDensity(currentPixelDensity);
+        }
+
+        function calculateAverageFPS() {
+            if (fpsHistory.length === 0) return 0;
+            return fpsHistory.reduce((a, b) => a + b) / fpsHistory.length;
         }
 
         function draw() {
+            // Calculate and store current FPS
+            let currentFPS = frameRate();
+            fpsHistory.push(currentFPS);
+            if (fpsHistory.length > fpsHistoryLength) {
+                fpsHistory.shift();
+            }
+
+            // Check performance and adjust every second
+            let currentTime = millis();
+            if (currentTime - lastAdjustTime > adjustCooldown) {
+                let avgFPS = calculateAverageFPS();
+                
+                if (avgFPS < targetFrameRate * 0.8) {  // If FPS is below 80% of target
+                    // Reduce resolution
+                    if (currentPixelDensity > 0.75) {
+                        currentPixelDensity = Math.max(0.75, currentPixelDensity - 0.25);
+                        pixelDensity(currentPixelDensity);
+                        console.log('Reducing resolution, new pixel density:', currentPixelDensity);
+                    }
+                } else if (avgFPS > targetFrameRate * 1.2) {  // If FPS is above 120% of target
+                    // Increase resolution if we're below original quality
+                    if (currentPixelDensity < 2) {
+                        currentPixelDensity = Math.min(2, currentPixelDensity + 0.25);
+                        pixelDensity(currentPixelDensity);
+                        console.log('Increasing resolution, new pixel density:', currentPixelDensity);
+                    }
+                }
+                
+                lastAdjustTime = currentTime;
+            }
+
             console.log("Draw called, canvas size:", width, height);
             clear();
             background(0);
@@ -987,6 +1035,16 @@
 
         function windowResized() {
             updateCanvasSize();
+        }
+
+        function drawPerformanceStats() {
+            let avgFPS = calculateAverageFPS();
+            push();
+            noStroke();
+            fill(255);
+            textSize(12);
+            text(`FPS: ${avgFPS.toFixed(1)} | Resolution: ${currentPixelDensity.toFixed(2)}x`, 10, 20);
+            pop();
         }
     </script>
   </body>
