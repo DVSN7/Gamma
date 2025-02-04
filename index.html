@@ -696,10 +696,11 @@
         let totalPausedTime = 0; // Track total paused time
         let luminosity = 2.5;
         let vibrancy = 7.5;
-        let targetFrameRate = 30;           // Target FPS
-        let currentPixelDensity = 1.5;      // Start with medium quality
-        let minPixelDensity = 1.0;          // Minimum acceptable quality
-        let maxPixelDensity = 2.5;          // Maximum quality
+        let targetFrameRate = 45;           // Target FPS
+        let currentPixelDensity = 2;        // Fixed high quality
+        let currentMaxDepth = 6;            // Start with medium depth
+        let minMaxDepth = 4;                // Minimum depth for performance
+        let maxMaxDepth = 8;                // Maximum depth for quality
         let fpsHistory = [];
         let fpsHistoryLength = 30;
         let lastAdjustTime = 0;
@@ -888,12 +889,13 @@
             });
             startTime = millis();
 
-            // Start with medium settings and let performance adjust
+            // Start with fixed pixel density and medium depth
             pixelDensity(currentPixelDensity);
 
             console.log('Initial Performance Settings:', {
                 targetFPS: targetFrameRate,
-                pixelDensity: currentPixelDensity
+                pixelDensity: currentPixelDensity,
+                maxDepth: currentMaxDepth
             });
         }
 
@@ -915,27 +917,23 @@
                     fpsHistory.shift();
                 }
 
-                // Adjust quality based on performance
+                // Adjust depth based on performance
                 if (now - lastAdjustTime > adjustCooldown) {
                     let avgFPS = calculateAverageFPS();
                     
                     if (avgFPS < targetFrameRate * 0.9) {  // Below target
-                        // Reduce quality
-                        if (currentPixelDensity > minPixelDensity) {
-                            currentPixelDensity = Math.max(minPixelDensity, 
-                                currentPixelDensity - 0.25);
-                            pixelDensity(currentPixelDensity);
-                            console.log('Reducing quality - FPS:', avgFPS.toFixed(1), 
-                                'New density:', currentPixelDensity.toFixed(2));
+                        // Reduce depth for better performance
+                        if (currentMaxDepth > minMaxDepth) {
+                            currentMaxDepth = Math.max(minMaxDepth, currentMaxDepth - 1);
+                            console.log('Reducing depth - FPS:', avgFPS.toFixed(1), 
+                                'New depth:', currentMaxDepth);
                         }
                     } else if (avgFPS > targetFrameRate * 1.1 && 
-                             currentPixelDensity < maxPixelDensity) {
-                        // Increase quality if we have headroom
-                        currentPixelDensity = Math.min(maxPixelDensity, 
-                            currentPixelDensity + 0.25);
-                        pixelDensity(currentPixelDensity);
-                        console.log('Increasing quality - FPS:', avgFPS.toFixed(1), 
-                            'New density:', currentPixelDensity.toFixed(2));
+                             currentMaxDepth < maxMaxDepth) {
+                        // Increase depth if we have performance headroom
+                        currentMaxDepth = Math.min(maxMaxDepth, currentMaxDepth + 1);
+                        console.log('Increasing depth - FPS:', avgFPS.toFixed(1), 
+                            'New depth:', currentMaxDepth);
                     }
                     
                     lastAdjustTime = now;
@@ -977,6 +975,7 @@
             theShader.setUniform('u_backgroundColor', [0.0, 0.0, 0.0, 1.0]);
             theShader.setUniform('u_luminosity', luminosity);
             theShader.setUniform('u_vibrancy', vibrancy);
+            theShader.setUniform('u_maxDepth', currentMaxDepth);
 
             beginShape();
             vertex(0, 0, 0, 0, 0);
