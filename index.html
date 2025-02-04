@@ -732,7 +732,7 @@
         };
         let R = new Rnd(inscription_id)
 
-        console.log('Inscription ID:', inscription_id)
+        //console.log('Inscription ID:', inscription_id)
 
         function updateTranslationForCenter() {
             let visibleWidth = width / scaleFactor;
@@ -746,13 +746,13 @@
             let vertexShader = document.getElementById('vertex-shader').textContent;
             let fragmentShader = document.getElementById('fragment-shader').textContent;
             theShader = createShader(vertexShader, fragmentShader);
-            console.log("Shader created:", theShader);
+            //console.log("Shader created:", theShader);
         }
 
         function setup() {
-            console.log("Starting setup...");
+            //console.log("Starting setup...");
             
-            console.log("inscription_id:", inscription_id);
+            //console.log("inscription_id:", inscription_id);
             
             if (!inscription_id) {
                 console.error("Could not retrieve inscription ID");
@@ -813,12 +813,12 @@
                 if (e.key === 'a' || e.key === 'A') {
                     displayMode = (displayMode + 1) % 3;
                     updateCanvasSize();
-                    console.log('Display mode:', ['fullscreen', '16:9', '9:16'][displayMode]);
+                    //console.log('Display mode:', ['fullscreen', '16:9', '9:16'][displayMode]);
                 }
                 if (e.key === 'r' || e.key === 'R') {
                     updateTranslationForCenter();
                     scaleFactor = 30;
-                    console.log('Position reset');
+                    //console.log('Position reset');
                 }
                 if (e.key === 's' || e.key === 'S') {
                     isPlaying = !isPlaying;
@@ -827,7 +827,7 @@
                     } else {
                         currentTime = (millis() - startTime) / 1000.0;
                     }
-                    console.log('Animation ' + (isPlaying ? 'playing' : 'paused'));
+                    //console.log('Animation ' + (isPlaying ? 'playing' : 'paused'));
                 }
                 if (e.key === '1') {
                     let currentDensity = pixelDensity();
@@ -843,7 +843,7 @@
                     
                     draw();
                     
-                    console.log('Canvas saved as shader_' + timestamp + '.png');
+                    //console.log('Canvas saved as shader_' + timestamp + '.png');
                 }
                 if (e.key === '2') {
                     let currentDensity = pixelDensity();
@@ -859,7 +859,7 @@
                     
                     draw();
                     
-                    console.log('High-res canvas saved as shader_hires_' + timestamp + '.png');
+                    //console.log('High-res canvas saved as shader_hires_' + timestamp + '.png');
                 }
                 if (e.key === '3') {
                     let currentDensity = pixelDensity();
@@ -875,26 +875,62 @@
                     
                     draw();
                     
-                    console.log('Very high-res canvas saved as shader_hires_' + timestamp + '.png');
+                    //console.log('Very high-res canvas saved as shader_hires_' + timestamp + '.png');
                 }
                 if (e.key === 'd' || e.key === 'D') {
                     if (scaleFactor === 30) scaleFactor = 10;
                     else scaleFactor = 30;
                     updateTranslationForCenter();
-                    console.log('Scale factor:', scaleFactor);
+                    //console.log('Scale factor:', scaleFactor);
                 }
             });
             startTime = millis();
 
-            // Set initial pixel density based on device
-            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-                currentPixelDensity = 1;  // Start lower on mobile devices
-                targetFrameRate = 30;     // Lower target FPS for mobile
-            } else {
-                currentPixelDensity = 2;  // Start higher on desktop
-                targetFrameRate = 45;     // Higher target FPS for desktop
+            // Device and performance detection
+            let isLowEnd = false;
+            let isMidRange = false;
+            let isHighEnd = false;
+
+            // Check if mobile
+            let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
+            // Check if low-end device (mobile or old laptop)
+            if (isMobile || window.navigator.hardwareConcurrency <= 4) {
+                isLowEnd = true;
             }
+            // Check if high-end device
+            else if (window.navigator.hardwareConcurrency >= 8) {
+                isHighEnd = true;
+            }
+            // Everything else is mid-range
+            else {
+                isMidRange = true;
+            }
+
+            // Set performance parameters based on device category
+            if (isLowEnd) {
+                currentPixelDensity = 1;    // Lower resolution
+                targetFrameRate = 24;       // Lower target FPS
+            } else if (isMidRange) {
+                currentPixelDensity = 1;    // Standard resolution
+                targetFrameRate = 30;       // Standard target FPS
+            } else {
+                currentPixelDensity = 2;    // High resolution
+                targetFrameRate = 45;       // Higher target FPS
+            }
+
+            // Additional performance scaling
+            if (!isMobile && window.navigator.hardwareConcurrency >= 12) {
+                // For very high-end devices
+                currentPixelDensity = 2.5;  // Even higher resolution
+                targetFrameRate = 60;       // Maximum target FPS
+            }
+
             pixelDensity(currentPixelDensity);
+            
+            // Log device category (optional)
+            //console.log('Device category:', isLowEnd ? 'Low-end' : isMidRange ? 'Mid-range' : 'High-end');
+            //console.log('Pixel Density:', currentPixelDensity, 'Target FPS:', targetFrameRate);
         }
 
         function calculateAverageFPS() {
@@ -924,7 +960,7 @@
                 }
             }
 
-            console.log("Draw called, canvas size:", width, height);
+            //console.log("Draw called, canvas size:", width, height);
             clear();
             background(0);
             
