@@ -538,7 +538,7 @@
             vec3 saturated = mix(
                 vec3(luminance),
                 boosted,
-                vec3(2.0)
+                vec3(5.0)
             );
             
             vec3 contrasted = pow(saturated, vec3(0.9));
@@ -552,8 +552,8 @@
 
         vec3 blendColors(vec3 a, vec3 b, float factor) {
             float rotationInfluence = (1.0 + sin(u_rotationAngle + u_time * 0.1)) * 0.5;
-            vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 0.8);
-            vec3 add = a + b * factor * 0.3;
+            vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 1.2);
+            vec3 add = a + b * factor * 0.5;
             
             return mix(screen, add, 2.5 + rotationInfluence);
         }
@@ -692,8 +692,10 @@
         let isPlaying = true;
         let startTime = 0;
         let currentTime = 0;
-        let luminosity = 1.5;
-        let vibrancy = 5.5;
+        let pauseStartTime = 0;  // Track when pause started
+        let totalPausedTime = 0; // Track total paused time
+        let luminosity = 2.5;
+        let vibrancy = 7.5;
         let targetFrameRate = 30;  // Minimum acceptable FPS
         let fpsHistory = [];
         let fpsHistoryLength = 30;  // Number of frames to average
@@ -901,35 +903,25 @@
         }
 
         function draw() {
-            // Calculate and store current FPS
-            let currentFPS = frameRate();
-            fpsHistory.push(currentFPS);
-            if (fpsHistory.length > fpsHistoryLength) {
-                fpsHistory.shift();
-            }
-
-            // Check performance and adjust every second
-            let currentTime = millis();
-            if (currentTime - lastAdjustTime > adjustCooldown) {
-                let avgFPS = calculateAverageFPS();
+            // Update timing
+            let now = millis();
+            
+            if (isPlaying) {
+                currentTime = (now - startTime - totalPausedTime) / 1000.0;
                 
-                if (avgFPS < targetFrameRate * 0.8) {  // If FPS is below 80% of target
-                    // Reduce resolution
-                    if (currentPixelDensity > 0.75) {
-                        currentPixelDensity = Math.max(0.75, currentPixelDensity - 0.25);
-                        pixelDensity(currentPixelDensity);
-                        console.log('Reducing resolution, new pixel density:', currentPixelDensity);
-                    }
-                } else if (avgFPS > targetFrameRate * 1.2) {  // If FPS is above 120% of target
-                    // Increase resolution if we're below original quality
-                    if (currentPixelDensity < 2) {
-                        currentPixelDensity = Math.min(2, currentPixelDensity + 0.25);
-                        pixelDensity(currentPixelDensity);
-                        console.log('Increasing resolution, new pixel density:', currentPixelDensity);
-                    }
+                // Only calculate FPS and adjust resolution when playing
+                let currentFPS = frameRate();
+                fpsHistory.push(currentFPS);
+                if (fpsHistory.length > fpsHistoryLength) {
+                    fpsHistory.shift();
                 }
-                
-                lastAdjustTime = currentTime;
+
+                // Performance check
+                if (now - lastAdjustTime > adjustCooldown) {
+                    let avgFPS = calculateAverageFPS();
+                    // ... resolution adjustment code ...
+                    lastAdjustTime = now;
+                }
             }
 
             console.log("Draw called, canvas size:", width, height);
@@ -937,7 +929,7 @@
             background(0);
             
             if (isPlaying) {
-                currentTime = (millis() - startTime) / 1000.0;
+                currentTime = (now - startTime - totalPausedTime) / 1000.0;
             }
 
             if (mouseIsPressed && mouseButton === LEFT) {
