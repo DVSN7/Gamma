@@ -1260,6 +1260,10 @@
         let currentFPS = 60;        // Track current FPS
         let fpsUpdateTime = 0;      // Time of last FPS update
         const FPS_UPDATE_INTERVAL = 500; // Update FPS every 500ms
+        const MIN_FPS_THRESHOLD = 30;    // Minimum acceptable FPS
+        const PERFORMANCE_CHECK_INTERVAL = 2000; // Check performance every 2 seconds
+        let lastPerformanceCheck = 0;    // Time of last performance check
+        let currentPixelDensity;         // Track current pixel density
         
         let bS = 1.0;     
         const cV = 6;  
@@ -1430,7 +1434,44 @@
                 }
             }, { passive: false });
             
-            canvas.addEventListener('touchend', () => {
+            // Combined touchend handler for both panning and double-tap
+            let lastTap = 0;
+            let lastTapX = 0;
+            let lastTapY = 0;
+            
+            canvas.addEventListener('touchend', (e) => {
+                const currentTime = new Date().getTime();
+                const currentX = e.changedTouches[0].clientX;
+                const currentY = e.changedTouches[0].clientY;
+                
+                // Check if this is a tap (not a drag)
+                const isTap = Math.abs(currentX - touchStartX) < 10 && 
+                            Math.abs(currentY - touchStartY) < 10;
+                
+                if (isTap) {
+                    const tapLength = currentTime - lastTap;
+                    const tapDistance = Math.sqrt(
+                        Math.pow(currentX - lastTapX, 2) + 
+                        Math.pow(currentY - lastTapY, 2)
+                    );
+                    
+                    // Check for double tap within 500ms and 50px distance
+                    if (tapLength < 500 && tapLength > 0 && tapDistance < 50) {
+                        // Double tap detected
+                        isP = !isP;
+                        if (isP) {
+                            stT = millis() - (lastPausedTime * 1000);
+                        } else {
+                            lastPausedTime = cuT;
+                        }
+                    }
+                    
+                    lastTap = currentTime;
+                    lastTapX = currentX;
+                    lastTapY = currentY;
+                }
+                
+                // Reset dragging state
                 isDragging = false;
                 canvas.style.cursor = 'grab';
             });
@@ -1438,24 +1479,6 @@
             canvas.addEventListener('touchcancel', () => {
                 isDragging = false;
                 canvas.style.cursor = 'grab';
-            });
-            
-            // Add double tap to toggle pause state
-            let lastTap = 0;
-            canvas.addEventListener('touchend', (e) => {
-                const currentTime = new Date().getTime();
-                const tapLength = currentTime - lastTap;
-                
-                if (tapLength < 500 && tapLength > 0) {
-                    // Double tap detected
-                    isP = !isP;
-                    if (isP) {
-                        stT = millis() - (lastPausedTime * 1000);
-                    } else {
-                        lastPausedTime = cuT;
-                    }
-                }
-                lastTap = currentTime;
             });
             
             // Set initial cursor style
@@ -1557,7 +1580,9 @@
             gl.disable(gl.DITHER);      
             gl.disable(gl.STENCIL_TEST);
             
-            pixelDensity(2);
+            // Initialize pixel density
+            currentPixelDensity = 2;
+            pixelDensity(currentPixelDensity);
             
             noStroke();
             shader(tS);
@@ -1776,6 +1801,28 @@
             if (now - fpsUpdateTime >= FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / elapsed;
                 fpsUpdateTime = now;
+            }
+            
+            // Check performance and adjust pixel density if needed
+            if (now - lastPerformanceCheck >= PERFORMANCE_CHECK_INTERVAL) {
+                lastPerformanceCheck = now;
+                
+                // Only adjust if FPS is consistently low
+                if (currentFPS < MIN_FPS_THRESHOLD) {
+                    // Reduce pixel density if it's not already at minimum
+                    if (currentPixelDensity > 1) {
+                        currentPixelDensity = Math.max(1, currentPixelDensity - 0.5);
+                        pixelDensity(currentPixelDensity);
+                        console.log('Reducing pixel density to:', currentPixelDensity, 'FPS:', currentFPS);
+                    }
+                } else if (currentFPS > MIN_FPS_THRESHOLD + 10) {
+                    // Increase pixel density if performance is good
+                    if (currentPixelDensity < 2) {
+                        currentPixelDensity = Math.min(2, currentPixelDensity + 0.5);
+                        pixelDensity(currentPixelDensity);
+                        console.log('Increasing pixel density to:', currentPixelDensity, 'FPS:', currentFPS);
+                    }
+                }
             }
             
             // Skip frame if we're rendering too quickly
