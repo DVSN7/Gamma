@@ -1438,6 +1438,8 @@
             let lastTap = 0;
             let lastTapX = 0;
             let lastTapY = 0;
+            let tapCount = 0;
+            let tapTimeout = null;
             
             canvas.addEventListener('touchend', (e) => {
                 const currentTime = new Date().getTime();
@@ -1455,16 +1457,43 @@
                         Math.pow(currentY - lastTapY, 2)
                     );
                     
-                    // Check for double tap within 500ms and 50px distance
-                    if (tapLength < 500 && tapLength > 0 && tapDistance < 50) {
-                        // Double tap detected
-                        isP = !isP;
-                        if (isP) {
-                            stT = millis() - (lastPausedTime * 1000);
-                        } else {
-                            lastPausedTime = cuT;
-                        }
+                    // Clear any existing timeout
+                    if (tapTimeout) {
+                        clearTimeout(tapTimeout);
                     }
+                    
+                    // Increment tap count if within time and distance constraints
+                    if (tapLength < 500 && tapLength > 0 && tapDistance < 50) {
+                        tapCount++;
+                        
+                        // Handle different tap counts
+                        if (tapCount === 2) {
+                            // Double tap - toggle pause
+                            isP = !isP;
+                            if (isP) {
+                                stT = millis() - (lastPausedTime * 1000);
+                            } else {
+                                lastPausedTime = cuT;
+                            }
+                        } else if (tapCount === 3) {
+                            // Triple tap - toggle scale factor (control D)
+                            if (scF === 40) {
+                                scF = 15;
+                            } else {
+                                scF = 40;
+                            }
+                            upTC();
+                            tapCount = 0; // Reset tap count after triple tap
+                        }
+                    } else {
+                        // Reset tap count if too much time or distance between taps
+                        tapCount = 1;
+                    }
+                    
+                    // Set timeout to reset tap count if no more taps
+                    tapTimeout = setTimeout(() => {
+                        tapCount = 0;
+                    }, 500);
                     
                     lastTap = currentTime;
                     lastTapX = currentX;
