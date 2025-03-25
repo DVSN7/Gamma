@@ -44,6 +44,7 @@
     <script id="fragment-shader" type="x-shader/x-fragment">
         #ifdef GL_ES
         precision mediump float;
+        precision lowp int;  
         #endif
 
         #define M_PI 3.14159265358979323846
@@ -55,608 +56,1091 @@
         uniform float u_noiseScale;
         uniform float u_maxDepth;
         uniform float u_flowSpeed;
-        uniform int u_paletteIndex1;
-        uniform int u_paletteIndex2;
-        uniform float u_noiseSeed;
-        uniform float u_randomScaleSeed;
-        uniform float u_rotationAngle;
-        uniform vec2 u_noiseOffset;
+        uniform float u_nS;
+        uniform float u_rSS;
+        uniform float u_roA;
+        uniform vec2 u_nOS;
         uniform float u_amplitude;
         uniform float u_scaleFactor;
         uniform vec2 u_translation;
-        uniform vec4 u_backgroundColor;
         uniform float u_luminosity;
         uniform float u_vibrancy;
         uniform float u_initialFreq;
-        uniform float u_baseScale;
+        uniform float u_bS;
+        uniform float u_sortStrength;
+        uniform float u_sortFrequency;
+        uniform float u_sortAnimSpeed;
+        uniform int u_currentPattern;
+        uniform float u_baseModulation;
+        uniform vec4 u_baseColor;
+        uniform vec3 u_randomColor1;  
+        uniform vec3 u_randomColor2;
+        uniform vec3 u_randomColor3;
+        
+        
+        
+        uniform bool u_enableGlyphNoiseDetail;    // Toggle detail noise within glyphs
 
-        float noise(vec2 st, float seed) {
-            // Pre-calculate floor and fract in one step
+        // Add the isLightBackground uniform to the shader
+        uniform bool u_isLightBackground;   // Whether we're using a light background
+
+        // Add uniform for muted colors
+        uniform bool u_useMutedColors;     // Whether we're using muted colors
+        
+        // Add this uniform after the other uniforms in the fragment shader
+        uniform float u_caScaleVariation;  // Controls how much the CA scale varies
+        
+        // Add uniforms for mouse position
+        uniform vec2 u_mouse;             // Mouse position in normalized coordinates
+        uniform bool u_mouseActive;       // Whether mouse is over the canvas
+        uniform float u_mouseInfluenceRadius; // Radius of mouse influence (added)
+
+        // Add trail system uniforms
+        uniform vec2 u_trailPositions[20];   // Trail point positions
+        uniform float u_trailTimes[20];      // Trail point timestamps
+        uniform int u_trailCount;            // Number of active trail points
+
+        lowp float random(vec2 st, float seed) {
+            // Hash function only needs low precision output
+            vec2 p = st + seed;
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        mediump float noise(vec2 st, float seed) {
+            // Integer and fractional parts
             vec2 i = floor(st);
-            vec2 f = st - i;  // More efficient than fract(st)
+            vec2 f = fract(st);
             
-            // Combine seed with coordinates
-            vec2 seeded = st.xy + seed;
+            // Optimized smoothstep with lowp precision
+            lowp vec2 u = f * f * (3.0 - 2.0 * f);
             
-            // Cubic interpolation for smoother result
-            vec2 u = f * f * (3.0 - 2.0 * f);  // No change needed, already efficient
+            // Gather corners with low precision
+            lowp float a = random(i, seed);
+            lowp float b = random(i + vec2(1.0, 0.0), seed);
+            lowp float c = random(i + vec2(0.0, 1.0), seed);
+            lowp float d = random(i + vec2(1.0, 1.0), seed);
             
-            // Combine dot products for random values
-            vec2 s = vec2(12.9898, 78.233);
-            float a = fract(sin(dot(i, s) + seed));
-            float b = fract(sin(dot(i + vec2(1.0, 0.0), s) + seed));
-            float c = fract(sin(dot(i + vec2(0.0, 1.0), s) + seed));
-            float d = fract(sin(dot(i + vec2(1.0, 1.0), s) + seed));
-            
-            // Single mix operation
+            // Mix can use low precision
             return mix(
-                mix(a, b, u.x),
-                mix(c, d, u.x),
-                u.y
-            );
+                a + (b - a) * u.x,
+                c + (d - c) * u.x,
+                u.y);
         }
 
-        vec3 mod289(vec3 x) { 
+        lowp vec3 mod289(vec3 x) { 
             return x - floor(x / 289.0) * 289.0; 
         }
 
-        vec2 mod289(vec2 x) { 
+        lowp vec2 mod289(vec2 x) { 
             return x - floor(x / 289.0) * 289.0; 
         }
 
-        vec3 permute(vec3 x) { 
+        lowp vec3 permute(vec3 x) { 
             return mod289((x * 34.0 + 1.0) * x); 
         }
-
-        float simplexNoise(vec2 v, float time) {
-            const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+//////////////////////////////////////////////////////////////////////
+        mediump float simplexNoise(mediump vec2 v, float time) {
+            // Original simplex noise variables and setup
+            mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
             
-            // Combine time addition with input
-            v += vec2(time * 0.03);
+            // Combine time addition into a single step
+            vec2 timeOffset = vec2(u_time * 0.03);
             
-            // Pre-calculate dot products used multiple times
-            float dotv = dot(v, C.yy);
-            vec2 i = floor(v + dotv);
-            vec2 x0 = v - i + dot(i, C.xx);
+            // First, compute standard simplex noise
+            mediump vec2 vOrig = v;
+            v += timeOffset;
             
-            // Simplify i1 calculation
-            vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            // Integer calculations can use low precision
+            lowp vec2 i = floor(v + dot(v, C.yy));
+            mediump vec2 x0 = v - i + dot(i, C.xx);
             
-            // Combine x12 calculations
-            vec4 x12 = x0.xyxy + C.xxzz;
+            // These boolean operations and offsets can use low precision
+            lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            
+            // Combined calculations to reduce register usage
+            mediump vec4 x12 = x0.xyxy + C.xxzz;
             x12.xy -= i1;
             
+            // Use existing mod289 function
             i = mod289(i);
-            vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+            lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
             
-            // Pre-calculate dot products for m
-            vec3 dots = vec3(
+            // Dot products need medium precision
+            mediump vec3 dots = vec3(
                 dot(x0, x0),
                 dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
                 dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
             );
-            vec3 m = max(0.5 - dots, 0.0);
-            m = m * m * m * m;
+           
+            // These multiplications can use low precision
+            lowp vec3 m = max(0.5 - dots, 0.0);
+            m = m * m;
+            m = m * m;
             
-            // Rest of the function remains the same
-            vec3 x = 2.0 * fract(p * C.www) - 1.0;
-            vec3 h = abs(x) - 0.5;
-            vec3 ox = floor(x + 0.5);
-            vec3 a0 = x - ox;
+            // These can use low precision
+            lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
+            lowp vec3 h = abs(x) - 0.5;
+            lowp vec3 ox = floor(x + 0.5);
+            lowp vec3 a0 = x - ox;
             
-            m *= 1.792842914 - 0.853734721 * (a0 * a0 + h * h);
+            // Final calculation
+            m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
             
-            vec3 g = vec3(
+            // Gradient calculation
+            lowp vec3 g = vec3(
                 a0.x * x0.x + h.x * x0.y,
                 a0.y * x12.x + h.y * x12.y,
                 a0.z * x12.z + h.z * x12.w
             );
             
-            return 130.0 * dot(m, g);
+            // Base simplex noise value
+            float noise = 130.0 * dot(m, g);
+            
+            // Now apply reaction-diffusion style transformations with smoother transitions
+            
+            // Use a more consistent time factor that won't cause sudden jumps
+            vec2 uv = vOrig * 0.06;
+            // Wrap time to prevent large values causing precision issues
+            float wrappedTime = mod(u_time, 10000.0);
+            float t = wrappedTime * 0.02;
+            
+            // Use smoothed mod/floor for cell transitions to avoid hard edges
+            vec2 cellPos = uv * 8.0;
+            vec2 cellFract = fract(cellPos);
+            // Apply smoothing at cell boundaries
+            vec2 cellWeight = smoothstep(0.0, 0.1, cellFract) * smoothstep(1.0, 0.9, cellFract);
+            vec2 cellCoord = floor(cellPos);
+            
+            // Generate cell pattern with smoother transitions across time
+            float cellNoise = fract(sin(dot(cellCoord, vec2(12.9898, 78.233))) * 43758.5453);
+            // Use a very slow time factor for stable cell evolution
+            float cellTime = t * 0.05;
+            float cellPattern = mix(
+                cellNoise,
+                fract(sin(dot(cellCoord + 1.0, vec2(12.9898, 78.233))) * 43758.5453),
+                smoothstep(0.0, 1.0, sin(cellTime) * 0.5 + 0.5)
+            );
+            
+            // Create continuous pattern transition with no hard edges
+            float patternMod = cellPattern * 2.0 - 1.0;
+            
+            // Smooth coordinate wrapping to prevent jumps at boundaries
+            vec2 phase = fract(uv * 2.5);
+            vec2 wrappedPos = phase - 0.5;
+            float dist = length(wrappedPos);
+            
+            // Create slow organic wave patterns
+            float waveSpeed = t * 0.3;
+            // Use higher harmonics with lower amplitudes for smoother motion
+            float wavePattern = (
+                sin(uv.x * 2.0 + waveSpeed) * cos(uv.y * 1.5 + waveSpeed * 0.7) * 0.15 +
+                sin(uv.x * 4.0 + waveSpeed * 0.5) * cos(uv.y * 3.0 + waveSpeed * 0.4) * 0.1
+            );
+            
+            // Create smooth cell boundaries with extra filtering
+            float rawDist = fract(dist * 3.0);
+            // Apply double smoothstep for extra-smooth edges
+            float cellEdge = smoothstep(0.3, 0.7, rawDist) * (1.0 - smoothstep(0.7, 0.9, rawDist)) * 0.25;
+            
+            // Ensure thresholds change very gradually
+            float thresholdTime = t * 0.1;
+            float threshold = 0.4 + 0.1 * sin(thresholdTime);
+            // Wide transition band and extra smoothing for threshold effects
+            float reactionEffect = smoothstep(threshold - 0.3, threshold + 0.3, abs(noise)) * 0.2;
+            
+            // Create continuous rotational flow without angle discontinuities
+            float flowTime = t * 0.08;
+            // Avoid using raw atan which can create discontinuities at angle wrap points
+            // Instead use separate sin/cos patterns that continuously wrap
+            float flowX = sin(wrappedPos.x * 3.0 + flowTime) * 0.15;
+            float flowY = cos(wrappedPos.y * 3.0 + flowTime * 1.1) * 0.15;
+            float flow = (flowX + flowY) * patternMod * 0.5;
+            
+            // Smooth activator-inhibitor interaction
+            float activator = noise * 0.5 + 0.5;
+            float inhibitor = 1.0 - activator;
+            float interaction = (activator * inhibitor * 3.0) * 0.15;
+            
+            // Create patterns that morph without discontinuities
+            float morphSpeed = t * 0.15;
+            float morphPattern = (
+                sin(dist * 5.0 + morphSpeed) * 0.1 +
+                cos(dist * 8.0 - morphSpeed * 0.7) * 0.08
+            );
+            
+            // Gradual component blending to avoid spikes
+            float rdComponent = wavePattern + cellEdge + reactionEffect + flow + interaction + morphPattern;
+            
+            // Use consistently smooth blend factor with limited range
+            float blendSpeed = t * 0.04;
+            float blendFactor = 0.45 + 0.1 * sin(blendSpeed);
+            
+            // Apply a temporal filter to smooth between frames
+            // Store previous frame contribution in the current result
+            noise = mix(noise, rdComponent, blendFactor);
+            
+            // Apply very gentle feedback with limited amplitude
+            noise += 0.08 * sin(noise * 2.5);
+            
+            // Apply a safety clamp with smooth falloff to prevent edge cases
+            float safeNoise = noise * 0.85;
+            
+            return safeNoise;
         }
 
+        /////////////////////////////////////////////////////////////
+
+        lowp float fastSin(float x) {
+            // Wrap to -PI to PI range
+            x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
+            
+            // Fast sine approximation
+            // Error < 0.002
+            float x2 = x * x;
+            return x * (1.0 - x2 / (3.0 * 2.0) + x2 * x2 / (5.0 * 4.0 * 3.0 * 2.0));
+        }
+
+        lowp float fastCos(float x) {
+            return fastSin(x + M_PI * 0.5);
+        }
+
+        // Add fast hyperbolic tangent approximation
+        lowp float fastTanh(float x) {
+            // Fast approximation of tanh
+            // Using the formula: tanh(x) ≈ x / (1 + |x|)
+            float absX = abs(x);
+            float signX = x < 0.0 ? -1.0 : 1.0;
+            return signX * absX / (1.0 + absX);
+        }
+
+
+
+        mediump float simplexNoise2(mediump vec2 v, float time) {
+            // Wrap time to prevent precision issues with large values
+            float wrappedTime = mod(u_time, 10000.0);
+            float t = wrappedTime * 0.01; // Slower time factor for more fluid movement
+            
+            // Use more organic, continuous movement
+            vec2 flowOffset = vec2(
+                sin(t * 0.13) * cos(t * 0.07) * 0.15,
+                cos(t * 0.11) * sin(t * 0.09) * 0.15
+            );
+            
+            // Add secondary flow components for more organic motion
+            flowOffset += vec2(
+                sin(t * 0.05 + v.x * 0.1) * 0.1,
+                cos(t * 0.04 + v.y * 0.1) * 0.1
+            );
+            
+            // Apply domain warping for more fluid movement
+            mediump vec2 p = v * 0.15;
+            
+            // Add position-dependent flow for more natural distortion
+            p += flowOffset;
+            
+            // Gradually changing scale creates breathing effect
+            float scaleVariation = 1.0 + sin(t * 0.03) * 0.15;
+            float scale = 1.0 * scaleVariation;
+            vec2 tilePos = p * scale;
+            
+            // Get tile coordinates
+            vec2 cell = floor(tilePos);
+            vec2 fractPos = fract(tilePos);
+            
+            // Get deterministic random value for this cell
+            float cellId = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Create temporal evolution for each cell
+            float cellTime = t * 0.1;
+            float cellPhase = sin(cellTime + cellId * 10.0) * 0.5 + 0.5;
+            
+            // Smooth tile rotation over time (less oscillatory)
+            float baseRotation = floor(cellId * 4.0) * 0.5 * 3.14159;
+            float rotationOffset = sin(t * 0.02 + cellId * 5.0) * 0.15; // Subtle rotation modulation
+            float rotation = baseRotation + rotationOffset;
+            
+            // Rotate the position within the cell
+            vec2 center = fractPos - 0.5;
+            float s = sin(rotation);
+            float c = cos(rotation);
+            vec2 rotatedPos = vec2(
+                center.x * c - center.y * s,
+                center.x * s + center.y * c
+            ) + 0.5;
+            
+            // Smooth morphing between pattern variations
+            float patternMorph = smoothstep(0.0, 1.0, sin(t * 0.01 + cellId * 3.0) * 0.5 + 0.5);
+            
+            // Arc thickness varies subtly with time for organic pulsing
+            float arcWidth = 0.1 + sin(t * 0.04 + cellId * 6.0) * 0.02;
+            float arcThick = 0.5 + arcWidth;
+            float arcThin = 0.5 - arcWidth;
+            
+            // Truchet basic pattern is made of quarter circles in opposite corners
+            float arcPattern;
+            
+            // Create smooth transitions between tile types
+            float tileTransition = smoothstep(0.45, 0.55, cellId + sin(t * 0.015 + length(cell) * 0.3) * 0.05);
+            
+            // Bottom-left to top-right with temporal modulation
+            float dist1 = length(rotatedPos);
+            float dist2 = length(rotatedPos - vec2(1.0, 1.0));
+            float arc1 = smoothstep(arcThick, arcThin, dist1);
+            float arc2 = smoothstep(arcThick, arcThin, dist2);
+            float pattern1 = max(arc1, arc2);
+            
+            // Top-left to bottom-right with temporal modulation
+            float dist3 = length(rotatedPos - vec2(0.0, 1.0));
+            float dist4 = length(rotatedPos - vec2(1.0, 0.0));
+            float arc3 = smoothstep(arcThick, arcThin, dist3);
+            float arc4 = smoothstep(arcThick, arcThin, dist4);
+            float pattern2 = max(arc3, arc4);
+            
+            // Blend between patterns for organic transitions
+            arcPattern = mix(pattern1, pattern2, tileTransition);
+            
+            // Create tile boundaries with temporal variation
+            float edgeWidth = 0.05 + sin(t * 0.03 + cellId * 4.0) * 0.01;
+            float edge = max(
+                smoothstep(edgeWidth, 0.0, min(fractPos.x, 1.0 - fractPos.x)),
+                smoothstep(edgeWidth, 0.0, min(fractPos.y, 1.0 - fractPos.y))
+            );
+            
+            // Add flowing detail to arcs - more fluid striped patterns
+            float arcDetail = 0.0;
+            
+            // Calculate continuous angles for smooth animation
+            float angle1 = atan(rotatedPos.y, rotatedPos.x);
+            float angle2 = atan(rotatedPos.y - 1.0, rotatedPos.x - 1.0);
+            float angle3 = atan(rotatedPos.y - 1.0, rotatedPos.x);
+            float angle4 = atan(rotatedPos.y, rotatedPos.x - 1.0);
+            
+            // Evolving stripe frequency and phase
+            float stripeFreq = 4.0 + sin(t * 0.02 + cellId * 7.0) * 1.0;
+            float stripePhase = t * 0.05;
+            
+            // Create flowing wave patterns along the arcs
+            float stripeFlow1 = sin(angle1 * stripeFreq + stripePhase + cellId * 10.0);
+            float stripeFlow2 = sin(angle2 * stripeFreq + stripePhase + cellId * 11.0);
+            float stripeFlow3 = sin(angle3 * stripeFreq + stripePhase + cellId * 12.0);
+            float stripeFlow4 = sin(angle4 * stripeFreq + stripePhase + cellId * 13.0);
+            
+            // Smoother transitions for stripes using smoothstep instead of step
+            float detail1 = smoothstep(-0.2, 0.2, stripeFlow1) * arc1;
+            float detail2 = smoothstep(-0.2, 0.2, stripeFlow2) * arc2;
+            float detail3 = smoothstep(-0.2, 0.2, stripeFlow3) * arc3;
+            float detail4 = smoothstep(-0.2, 0.2, stripeFlow4) * arc4;
+            
+            // Blend details based on tile transition
+            float details12 = max(detail1, detail2);
+            float details34 = max(detail3, detail4);
+            arcDetail = mix(details12, details34, tileTransition);
+            
+            // Add subtle reaction-diffusion effect similar to simplexNoise
+            float reactionSpeed = t * 0.07;
+            float reactionEffect = smoothstep(0.3, 0.7, 
+                sin(length(rotatedPos - 0.5) * 8.0 + reactionSpeed) * 0.5 + 0.5
+            ) * 0.15;
+            
+            // Create organic flow field distortion
+            float flowFieldTime = t * 0.06;
+            float flowX = sin(rotatedPos.x * 3.0 + flowFieldTime) * 0.1;
+            float flowY = cos(rotatedPos.y * 3.0 + flowFieldTime * 1.1) * 0.1;
+            float flowEffect = (flowX + flowY) * cellPhase * 0.2;
+            
+            // Combine patterns with organic blending
+            float blendFactor = 0.4 + 0.1 * sin(t * 0.04);
+            float basePattern = max(arcPattern * 0.8, arcDetail * 0.5);
+            float organicPattern = basePattern + reactionEffect + flowEffect;
+            
+            // Add edge highlighting with temporal variation
+            organicPattern = max(organicPattern, edge * (0.9 + sin(t * 0.05) * 0.1));
+            
+            // Add feedback influence for more fluid evolution
+            float feedback = sin(organicPattern * 3.0 + t * 0.03) * 0.1;
+            organicPattern += feedback;
+            
+            return organicPattern * 2.0 - 1.0;
+        }
+
+//////////////////////////////////////////////////
+
+
+
+        
+
         vec2 domainWarp(vec2 p, float time) {
-            float distortion1 = simplexNoise(p * 0.3 + time * 0.001, time * 0.001);
-            float distortion2 = simplexNoise((p + vec2(5.2, 1.3)) * 0.2 - time * 0.0015, time * 0.001);
+            float slowTime = u_time * 0.0001;
+            
+            float flow = simplexNoise2(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
+            float detail = simplexNoise2(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
+            
+            // Use fast approximations
+            float angle = slowTime * 0.1;
+            float rotX = fastCos(angle) * flow;
+            float rotY = fastSin(angle) * flow;
             
             return p + vec2(
-                distortion1 * 2.0 + sin(time * 0.1) * 0.5,
-                distortion2 * 2.0 + cos(time * 0.05) * 0.5
+                rotX * 1.5 + detail,
+                rotY * 1.5 + detail
             );
         }
 
         float layeredNoise(vec2 p, float time) {
-            // Pre-calculate warped coordinates once
-            vec2 warped = domainWarp(p, time);
-            
-            // Calculate all noise values with single warped coordinate
-            float mainLayer = simplexNoise(warped, time);
-            float detail = simplexNoise(warped + mainLayer * 0.5, time * 0.3) * 0.5;  // Simplified multiplication
-            float background = simplexNoise(p * 0.1, time) * 0.3;  // Reduced coordinate scaling
-            
-            // Combine layers with single operation
-            return dot(vec3(mainLayer, detail, background), vec3(0.6, 0.3, 0.1));  // Use dot product instead of multiple adds
+            // Simplified to single layer with detail
+            float mainLayer = simplexNoise2(p, time);
+            float detail = simplexNoise2(p * 2.0, time * 0.3) * 0.3;
+            return mainLayer * 0.7 + detail * 0.3;
         }
 
         float fbmSimplexNoise(vec2 v, int octaves) {
             if (octaves <= 0) return 0.0;
             
-            v += u_noiseOffset;
-            v += vec2(u_noiseSeed);
-            
-            const float PERSISTENCE = 0.15;
-            const float LACUNARITY = 0.04;
-            float INITIAL_FREQ = u_initialFreq;
+            const float PERSISTENCE = 0.001;
+            const float LACUNARITY = 0.0009;
+            const int MAX_OCTAVES = 2;
             
             float total = 0.0;
             float amplitude = u_amplitude;
-            float frequency = INITIAL_FREQ;
+            float frequency = u_initialFreq;
             
+            // Apply initial offsets
+            v += u_nOS + vec2(u_nS);
+            
+            // Calculate base pattern with simplified domain warping
             vec2 warpedCoord = domainWarp(v, u_time * 0.1);
             float basePattern = layeredNoise(warpedCoord, u_time);
-            
             total = amplitude * basePattern;
             
-            for(int i = 1; i < 3; i++) {
-                amplitude *= PERSISTENCE * (1.0 + float(i) * 0.3);
-                frequency *= LACUNARITY * (1.0 + sin(u_time * 0.1) * 0.2);
-                
-                float angle = float(i) * 0.8 + u_time * 0.05;
-                mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-                vec2 rotated = rot * warpedCoord;
-                
-                total += amplitude * layeredNoise(rotated * frequency, u_time * 0.9);
+            // Simplified time influence - single noise sample
+            float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
+            
+            // Only two octaves with simplified rotation
+            float timeRotation = u_time * 0.05;
+            // Precalculate sin/cos using fast approximations
+            float sinRot = fastSin(timeRotation);
+            float cosRot = fastCos(timeRotation);
+            mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
+            
+            // First octave
+            amplitude *= PERSISTENCE * 3.2;
+            frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+            total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
+            
+            // Second octave (if needed)
+            if (octaves > 1) {
+                amplitude *= PERSISTENCE * 2.0;
+                frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+                total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
             }
             
-            float modulation = sin(u_time * 0.1) * 0.2 + 0.9;
-            total *= modulation;
-            
-            return total;
+            // Apply final modulation
+            return total * (timeInfluence * 0.9 + u_baseModulation);
         }
 
-        mat2 getRotationMatrix(float angle) {
-            float c = cos(angle);
-            float s = sin(angle);
-            return mat2(c, -s, s, c);
-        }
 
-        vec3 getColorFromPalette(int pIdx, float t) {
+        lowp vec3 getColorFromPalette(float t) {
             t = clamp(t, 0.0, 4.0) * 7.0;
             int segment = int(t);
             float frac = t - float(segment);
-            
-            vec3 c1, c2, c3, c4, c5, c6, c7, c8;
-            
-            if (pIdx == 0) {
-                c1 = vec3(0.945, 0.165, 0.000);  // #f12a00 - Bright red
-                c2 = vec3(0.843, 0.145, 0.000);  // #d72500 - Deep red
-                c3 = vec3(0.745, 0.129, 0.000);  // #be2100 - Dark red
-                c4 = vec3(0.647, 0.110, 0.000);  // #a51c00 - Very dark red
-                c5 = vec3(0.561, 0.184, 0.043);  // #8f2f0b - Burnt red
-                c6 = vec3(0.867, 0.545, 0.059);  // #dd8b0f - Orange
-                c7 = vec3(0.137, 0.820, 0.216);  // #23d137 - Bright green
-                c8 = vec3(0.220, 0.400, 0.188);  // #386630 - Forest green
-            } else if (pIdx == 1) {
-                // Neon red palette
-                c1 = vec3(1.000, 0.000, 0.000);  // Pure red
-                c2 = vec3(1.000, 0.200, 0.000);  // Hot red
-                c3 = vec3(1.000, 0.000, 0.200);  // Neon red-pink
-                c4 = vec3(1.000, 0.300, 0.000);  // Electric orange-red
-                c5 = vec3(1.000, 0.000, 0.300);  // Bright pink-red
-                c6 = vec3(1.000, 0.150, 0.000);  // Glowing red
-                c7 = vec3(1.000, 0.000, 0.150);  // Radiant red
-                c8 = vec3(1.000, 0.100, 0.100);  // Neon rose
-            } else if (pIdx == 2) {
-                // Red with complementary cyan
-                c1 = vec3(0.800, 0.100, 0.100);  // Medium red
-                c2 = vec3(0.000, 0.700, 0.800);  // Cyan (complement)
-                c3 = vec3(0.900, 0.200, 0.200);  // Bright red
-                c4 = vec3(0.000, 0.800, 0.900);  // Light cyan (complement)
-                c5 = vec3(0.700, 0.000, 0.000);  // Deep red
-                c6 = vec3(0.000, 0.700, 0.700);  // Dark cyan (complement)
-                c7 = vec3(1.000, 0.300, 0.300);  // Light red
-                c8 = vec3(0.600, 0.000, 0.000);  // Darkest red
-            } else if (pIdx == 3) {
-                // Red with analogous oranges and magentas
-                c1 = vec3(0.900, 0.100, 0.100);  // Pure red
-                c2 = vec3(0.900, 0.400, 0.100);  // Orange-red
-                c3 = vec3(0.900, 0.100, 0.400);  // Magenta-red
-                c4 = vec3(0.500, 0.500, 0.000);  // Bright orange
-                c5 = vec3(1.000, 0.000, 0.500);  // Bright magenta
-                c6 = vec3(0.800, 0.300, 0.000);  // Dark orange-red
-                c7 = vec3(0.800, 0.000, 0.300);  // Dark magenta-red
-                c8 = vec3(0.700, 0.100, 0.100);  // Deep red
-            } else if (pIdx == 4) {
-                // Yellow to red gradient
-                c1 = vec3(0.965, 0.925, 0.376);  // #f6ec60 - Light yellow
-                c2 = vec3(0.976, 0.839, 0.306);  // #f9d64e - Golden yellow
-                c3 = vec3(0.976, 0.784, 0.306);  // #f9c84e - Deep yellow
-                c4 = vec3(0.976, 0.659, 0.141);  // #f9a824 - Yellow-orange
-                c5 = vec3(0.976, 0.659, 0.141);  // #f9a824 - Yellow-orange
-                c6 = vec3(0.957, 0.498, 0.122);  // #f47f1f - Orange
-                c7 = vec3(0.957, 0.498, 0.122);  // #f47f1f - Orange
-                c8 = vec3(0.827, 0.192, 0.192);  // #d33131 - Red
-            } else if (pIdx == 5) {
-                // Yellow to blue gradient
-                c1 = vec3(0.965, 0.925, 0.376);  // #f6ec60 - Bright yellow
-                c2 = vec3(0.965, 0.820, 0.173);  // #f6d12c - Golden yellow
-                c3 = vec3(0.961, 0.706, 0.000);  // #f5b400 - Deep yellow
-                c4 = vec3(0.961, 0.639, 0.000);  // #f5a300 - Orange yellow
-                c5 = vec3(0.659, 0.792, 0.941);  // #a8caf0 - Light blue
-                c6 = vec3(0.420, 0.612, 0.820);  // #6b9cd1 - Medium blue
-                c7 = vec3(0.231, 0.420, 0.608);  // #3b6b9b - Deep blue
-                c8 = vec3(0.169, 0.298, 0.490);  // #2b4c7d - Dark blue
-            } else if (pIdx == 6) {
-                // Golden yellow with purple complements
-                c1 = vec3(0.800, 0.600, 0.000);  // Deep gold
-                c2 = vec3(0.500, 0.100, 0.900);  // Purple (complement)
-                c3 = vec3(0.900, 0.700, 0.000);  // Rich gold
-                c4 = vec3(0.600, 0.200, 1.000);  // Light purple (complement)
-                c5 = vec3(1.000, 0.800, 0.000);  // Bright gold
-                c6 = vec3(0.400, 0.000, 0.800);  // Dark purple (complement)
-                c7 = vec3(1.000, 0.850, 0.200);  // Light gold
-                c8 = vec3(0.700, 0.500, 0.000);  // Dark amber
-            } else if (pIdx == 7) {
-                // Yellow to orange gradient
-                c1 = vec3(1.000, 0.918, 0.000);  // #ffea00 - Bright yellow
-                c2 = vec3(1.000, 0.835, 0.000);  // #ffd500 - Golden yellow
-                c3 = vec3(1.000, 0.765, 0.000);  // #ffc300 - Deep yellow
-                c4 = vec3(1.000, 0.718, 0.000);  // #ffb700 - Yellow-orange
-                c5 = vec3(1.000, 0.616, 0.000);  // #ff9d00 - Light orange
-                c6 = vec3(1.000, 0.549, 0.000);  // #ff8c00 - Orange
-                c7 = vec3(1.000, 0.502, 0.000);  // #ff8000 - Deep orange
-                c8 = vec3(1.000, 0.431, 0.000);  // #ff6e00 - Burnt orange
-            } else if (pIdx == 8) {
-                // Muted purple palette
-                c1 = vec3(0.400, 0.300, 0.450);  // Dusty purple
-                c2 = vec3(0.500, 0.400, 0.550);  // Muted lavender
-                c3 = vec3(0.350, 0.250, 0.400);  // Deep muted purple
-                c4 = vec3(0.600, 0.500, 0.650);  // Soft mauve
-                c5 = vec3(0.300, 0.200, 0.350);  // Dark muted purple
-                c6 = vec3(0.450, 0.350, 0.500);  // Medium dusty purple
-                c7 = vec3(0.550, 0.450, 0.600);  // Light mauve
-                c8 = vec3(0.250, 0.150, 0.300);  // Darkest muted purple
-            } else if (pIdx == 9) {
-                // Turquoise to purple gradient
-                c1 = vec3(0.455, 0.910, 0.824);  // #74e8d2 - Turquoise
-                c2 = vec3(0.776, 0.373, 0.271);  // #c65f45 - Coral red
-                c3 = vec3(0.847, 0.051, 0.302);  // #d80d4d - Deep pink
-                c4 = vec3(0.824, 0.208, 0.541);  // #d2358a - Rose pink
-                c5 = vec3(0.804, 0.263, 0.761);  // #cd43c2 - Magenta
-                c6 = vec3(0.784, 0.275, 0.976);  // #c846f9 - Bright purple
-                c7 = vec3(0.847, 0.459, 0.996);  // #d875fe - Light purple
-                c8 = vec3(0.910, 0.616, 0.996);  // #e89dfe - Pale purple
-            } else if (pIdx == 10) {
-                // Purple with complementary yellow
-                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
-                c2 = vec3(0.900, 0.800, 0.000);  // Golden yellow (complement)
-                c3 = vec3(0.600, 0.200, 0.800);  // Bright purple
-                c4 = vec3(1.000, 0.900, 0.200);  // Light yellow (complement)
-                c5 = vec3(0.400, 0.000, 0.600);  // Deep purple
-                c6 = vec3(0.800, 0.700, 0.000);  // Dark yellow (complement)
-                c7 = vec3(0.700, 0.300, 0.900);  // Light purple
-                c8 = vec3(0.300, 0.000, 0.500);  // Darkest purple
-            } else if (pIdx == 11) {
-                // Purple with analogous blues and magentas
-                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
-                c2 = vec3(0.300, 0.100, 0.800);  // Blue-purple
-                c3 = vec3(0.700, 0.100, 0.600);  // Magenta-purple
-                c4 = vec3(0.400, 0.050, 0.900);  // Deep blue-purple
-                c5 = vec3(0.800, 0.100, 0.500);  // Pink-purple
-                c6 = vec3(0.200, 0.050, 0.700);  // Dark blue-purple
-                c7 = vec3(0.900, 0.200, 0.600);  // Bright magenta-purple
-                c8 = vec3(0.600, 0.150, 0.800);  // Rich purple
-            } else if (pIdx == 12) {
-                // Muted blue palette
-                c1 = vec3(0.300, 0.350, 0.450);  // Dusty blue
-                c2 = vec3(0.400, 0.450, 0.550);  // Muted steel blue
-                c3 = vec3(0.250, 0.300, 0.400);  // Deep muted blue
-                c4 = vec3(0.500, 0.550, 0.650);  // Soft slate blue
-                c5 = vec3(0.200, 0.250, 0.350);  // Dark muted blue
-                c6 = vec3(0.350, 0.400, 0.500);  // Medium dusty blue
-                c7 = vec3(0.450, 0.500, 0.600);  // Light slate
-                c8 = vec3(0.150, 0.200, 0.300);  // Darkest muted blue
-            } else if (pIdx == 13) {
-                // Neon blue palette
-                c1 = vec3(0.000, 0.400, 1.000);  // Electric blue
-                c2 = vec3(0.000, 0.800, 1.000);  // Bright cyan
-                c3 = vec3(0.200, 0.600, 1.000);  // Neon sky blue
-                c4 = vec3(0.000, 1.000, 1.000);  // Pure cyan
-                c5 = vec3(0.000, 0.200, 1.000);  // Deep electric blue
-                c6 = vec3(0.400, 0.800, 1.000);  // Glowing light blue
-                c7 = vec3(0.000, 0.600, 1.000);  // Bright azure
-                c8 = vec3(0.200, 1.000, 1.000);  // Luminous cyan
-            } else if (pIdx == 14) {
-                // Blue with complementary orange
-                c1 = vec3(0.100, 0.300, 0.800);  // Medium blue
-                c2 = vec3(1.000, 0.500, 0.000);  // Orange (complement)
-                c3 = vec3(0.200, 0.400, 0.900);  // Bright blue
-                c4 = vec3(1.000, 0.600, 0.200);  // Light orange (complement)
-                c5 = vec3(0.000, 0.200, 0.700);  // Deep blue
-                c6 = vec3(0.900, 0.400, 0.000);  // Dark orange (complement)
-                c7 = vec3(0.300, 0.500, 1.000);  // Light blue
-                c8 = vec3(0.000, 0.100, 0.600);  // Darkest blue
-            } else if (pIdx == 15) {
-                // Blue with analogous cyans and violets
-                c1 = vec3(0.200, 0.400, 0.900);  // Pure blue
-                c2 = vec3(0.000, 0.600, 0.800);  // Blue-cyan
-                c3 = vec3(0.300, 0.200, 0.100);  // Blue-violet
-                c4 = vec3(0.000, 0.800, 0.800);  // Bright cyan
-                c5 = vec3(0.400, 0.100, 0.800);  // Bright violet
-                c6 = vec3(0.100, 0.500, 0.700);  // Dark blue-cyan
-                c7 = vec3(0.500, 0.300, 0.900);  // Light blue-violet
-                c8 = vec3(0.100, 0.300, 0.800);  // Deep blue
-            } else if (pIdx == 16) {
-                // Turquoise to purple gradient
-                c1 = vec3(0.455, 0.910, 0.824);  // #74e8d2 - Turquoise
-                c2 = vec3(0.776, 0.373, 0.271);  // #c65f45 - Coral red
-                c3 = vec3(0.847, 0.051, 0.302);  // #d80d4d - Deep pink
-                c4 = vec3(0.824, 0.208, 0.541);  // #d2358a - Rose pink
-                c5 = vec3(0.804, 0.263, 0.761);  // #cd43c2 - Magenta
-                c6 = vec3(0.784, 0.275, 0.976);  // #c846f9 - Bright purple
-                c7 = vec3(0.847, 0.459, 0.996);  // #d875fe - Light purple
-                c8 = vec3(0.910, 0.616, 0.996);  // #e89dfe - Pale purple
-            } else if (pIdx == 17) {
-                // Purple with complementary yellow
-                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
-                c2 = vec3(0.900, 0.800, 0.000);  // Golden yellow (complement)
-                c3 = vec3(0.600, 0.200, 0.800);  // Bright purple
-                c4 = vec3(1.000, 0.900, 0.200);  // Light yellow (complement)
-                c5 = vec3(0.400, 0.000, 0.600);  // Deep purple
-                c6 = vec3(0.800, 0.700, 0.000);  // Dark yellow (complement)
-                c7 = vec3(0.700, 0.300, 0.900);  // Light purple
-                c8 = vec3(0.300, 0.000, 0.500);  // Darkest purple
-            } else if (pIdx == 18) {
-                // Purple with analogous blues and magentas
-                c1 = vec3(0.500, 0.100, 0.700);  // Medium purple
-                c2 = vec3(0.300, 0.100, 0.800);  // Blue-purple
-                c3 = vec3(0.700, 0.100, 0.600);  // Magenta-purple
-                c4 = vec3(0.400, 0.050, 0.900);  // Deep blue-purple
-                c5 = vec3(0.800, 0.100, 0.500);  // Pink-purple
-                c6 = vec3(0.200, 0.050, 0.700);  // Dark blue-purple
-                c7 = vec3(0.900, 0.200, 0.600);  // Bright magenta-purple
-                c8 = vec3(0.600, 0.150, 0.800);  // Rich purple
-            } else if (pIdx == 19) {
-                // Orange-red to pink gradient
-                c1 = vec3(0.765, 0.329, 0.208);  // #c35435 - Deep orange-red
-                c2 = vec3(0.867, 0.396, 0.247);  // #dd653f - Burnt orange
-                c3 = vec3(0.949, 0.451, 0.294);  // #f2734b - Coral orange
-                c4 = vec3(0.984, 0.478, 0.345);  // #fb7a58 - Light coral
-                c5 = vec3(1.000, 0.443, 0.427);  // #ff716d - Salmon pink
-                c6 = vec3(1.000, 0.322, 0.518);  // #ff5284 - Hot pink
-                c7 = vec3(0.992, 0.329, 0.569);  // #fd5491 - Deep pink
-                c8 = vec3(0.976, 0.396, 0.608);  // #f9659b - Rose pink
-            } else if (pIdx == 20) {
-                // Peach and lime gradient
-                c1 = vec3(1.000, 0.780, 0.541);  // #ffc78a - Light peach
-                c2 = vec3(1.000, 0.792, 0.569);  // #ffca91 - Warm peach
-                c3 = vec3(0.780, 0.976, 0.231);  // #c7f93b - Bright lime
-                c4 = vec3(0.678, 0.957, 0.604);  // #adf49a - Light lime
-                c5 = vec3(1.000, 0.827, 0.639);  // #ffd3a3 - Soft peach
-                c6 = vec3(1.000, 0.839, 0.667);  // #ffd6aa - Pale peach
-                c7 = vec3(1.000, 0.851, 0.690);  // #ffd9b0 - Cream peach
-                c8 = vec3(1.000, 0.863, 0.714);  // #ffdcb6 - Light cream
-            } else if (pIdx == 21) {
-                // Orange with complementary blue
-                c1 = vec3(1.000, 0.500, 0.000);  // Medium orange
-                c2 = vec3(0.000, 0.400, 1.000);  // Blue (complement)
-                c3 = vec3(1.000, 0.600, 0.200);  // Bright orange
-                c4 = vec3(0.200, 0.500, 1.000);  // Light blue (complement)
-                c5 = vec3(0.900, 0.400, 0.000);  // Deep orange
-                c6 = vec3(0.000, 0.300, 0.900);  // Dark blue (complement)
-                c7 = vec3(1.000, 0.700, 0.300);  // Light orange
-                c8 = vec3(0.800, 0.300, 0.000);  // Darkest orange
-            } else if (pIdx == 22) {
-                // Orange with analogous reds and yellows
-                c1 = vec3(1.000, 0.500, 0.000);  // Pure orange
-                c2 = vec3(1.000, 0.300, 0.000);  // Red-orange
-                c3 = vec3(1.000, 0.700, 0.000);  // Yellow-orange
-                c4 = vec3(1.000, 0.200, 0.000);  // Bright red-orange
-                c5 = vec3(1.000, 0.800, 0.000);  // Bright yellow-orange
-                c6 = vec3(0.900, 0.400, 0.000);  // Deep orange-red
-                c7 = vec3(1.000, 0.600, 0.200);  // Light orange
-                c8 = vec3(0.800, 0.400, 0.000);  // Deep orange
-            } else if (pIdx == 23) {
-                // Soft monochrome to blue gradient
-                c1 = vec3(0.914, 0.863, 0.804);  // #e9dccd - Warm off-white
-                c2 = vec3(0.867, 0.835, 0.831);  // #ddd5d4 - Cool light gray
-                c3 = vec3(0.820, 0.812, 0.859);  // #d1cfdb - Light lavender gray
-                c4 = vec3(0.773, 0.784, 0.882);  // #c5c8e1 - Pale periwinkle
-                c5 = vec3(0.725, 0.757, 0.906);  // #b9c1e7 - Light blue-gray
-                c6 = vec3(0.682, 0.729, 0.929);  // #aebaed - Soft periwinkle
-                c7 = vec3(0.635, 0.702, 0.949);  // #a2b3f2 - Light blue
-                c8 = vec3(0.592, 0.671, 0.969);  // #97abf7 - Soft blue
-            } else if (pIdx == 24) {
-                // Mint green gradient
-                c1 = vec3(0.725, 1.000, 0.859);  // #b9ffdb - Pale mint
-                c2 = vec3(0.667, 1.000, 0.824);  // #aaffd2 - Light mint
-                c3 = vec3(0.608, 1.000, 0.792);  // #9bffca - Fresh mint
-                c4 = vec3(0.537, 1.000, 0.757);  // #89ffc1 - Bright mint
-                c5 = vec3(0.447, 0.933, 0.675);  // #72eeac - Medium mint
-                c6 = vec3(0.337, 0.800, 0.545);  // #56cc8b - Deep mint
-                c7 = vec3(0.224, 0.671, 0.416);  // #39ab6a - Forest mint
-                c8 = vec3(0.090, 0.549, 0.294);  // #178c4b - Dark mint
-            } else if (pIdx == 25) {
-                // Complementary monochrome (alternating dark/light)
-                c1 = vec3(0.100, 0.100, 0.100);  // Near black
-                c2 = vec3(0.900, 0.900, 0.900);  // Near white
-                c3 = vec3(0.200, 0.200, 0.200);  // Dark gray
-                c4 = vec3(0.800, 0.800, 0.800);  // Light gray
-                c5 = vec3(0.300, 0.300, 0.300);  // Medium dark
-                c6 = vec3(0.700, 0.700, 0.700);  // Medium light
-                c7 = vec3(0.400, 0.400, 0.400);  // Mid gray
-                c8 = vec3(0.600, 0.600, 0.600);  // Light mid gray
-            } else if (pIdx == 26) {
-                // Smooth gradient monochrome
-                c1 = vec3(0.000, 0.000, 0.000);  // Black
-                c2 = vec3(0.150, 0.150, 0.150);  // Very dark gray
-                c3 = vec3(0.300, 0.300, 0.300);  // Dark gray
-                c4 = vec3(0.450, 0.450, 0.450);  // Medium dark gray
-                c5 = vec3(0.600, 0.600, 0.600);  // Medium light gray
-                c6 = vec3(0.750, 0.750, 0.750);  // Light gray
-                c7 = vec3(0.900, 0.900, 0.900);  // Very light gray
-                c8 = vec3(1.000, 1.000, 1.000);  // White
-            } else if (pIdx == 27) {
-                // Triadic: Red, Blue, Yellow
-                c1 = vec3(1.000, 0.200, 0.200);  // Bright red
-                c2 = vec3(0.200, 0.200, 1.000);  // Bright blue
-                c3 = vec3(1.000, 1.000, 0.200);  // Bright yellow
-                c4 = vec3(0.800, 0.100, 0.100);  // Deep red
-                c5 = vec3(0.100, 0.100, 0.800);  // Deep blue
-                c6 = vec3(0.800, 0.800, 0.100);  // Deep yellow
-                c7 = vec3(1.000, 0.300, 0.300);  // Light red
-                c8 = vec3(0.300, 0.300, 1.000);  // Light blue
-            } else if (pIdx == 28) {
-                // Triadic: Purple, Green, Orange
-                c1 = vec3(0.800, 0.200, 1.000);  // Bright purple
-                c2 = vec3(0.200, 0.800, 0.200);  // Bright green
-                c3 = vec3(1.000, 0.600, 0.000);  // Bright orange
-                c4 = vec3(0.600, 0.100, 0.800);  // Deep purple
-                c5 = vec3(0.100, 0.600, 0.100);  // Deep green
-                c6 = vec3(0.800, 0.400, 0.000);  // Deep orange
-                c7 = vec3(1.000, 0.400, 1.000);  // Light purple
-                c8 = vec3(0.400, 1.000, 0.400);  // Light green
-            } else if (pIdx == 29) {
-                // Triadic: Cyan, Magenta, Yellow
-                c1 = vec3(0.000, 1.000, 1.000);  // Bright cyan
-                c2 = vec3(1.000, 0.000, 1.000);  // Bright magenta
-                c3 = vec3(1.000, 1.000, 0.000);  // Bright yellow
-                c4 = vec3(0.000, 0.800, 0.800);  // Deep cyan
-                c5 = vec3(0.800, 0.000, 0.800);  // Deep magenta
-                c6 = vec3(0.800, 0.800, 0.000);  // Deep yellow
-                c7 = vec3(0.400, 1.000, 1.000);  // Light cyan
-                c8 = vec3(1.000, 0.400, 1.000);  // Light magenta
-            } else if (pIdx == 30) {
-                // Triadic: Blue-Green, Red-Orange, Purple-Blue
-                c1 = vec3(0.000, 0.800, 0.600);  // Blue-green
-                c2 = vec3(1.000, 0.400, 0.200);  // Red-orange
-                c3 = vec3(0.400, 0.200, 1.000);  // Purple-blue
-                c4 = vec3(0.000, 1.000, 0.800);  // Bright blue-green
-                c5 = vec3(1.000, 0.600, 0.400);  // Bright red-orange
-                c6 = vec3(0.600, 0.400, 1.000);  // Bright purple-blue
-                c7 = vec3(0.200, 0.600, 0.400);  // Deep blue-green
-                c8 = vec3(0.800, 0.200, 0.000);  // Deep red-orange
-            } else if (pIdx == 31) {
-                // Triadic: Yellow-Green, Blue-Violet, Red-Orange
-                c1 = vec3(0.600, 1.000, 0.000);  // Yellow-green
-                c2 = vec3(0.400, 0.000, 1.000);  // Blue-violet
-                c3 = vec3(1.000, 0.400, 0.000);  // Red-orange
-                c4 = vec3(0.800, 1.000, 0.200);  // Bright yellow-green
-                c5 = vec3(0.600, 0.200, 1.000);  // Bright blue-violet
-                c6 = vec3(1.000, 0.600, 0.200);  // Bright red-orange
-                c7 = vec3(0.400, 0.800, 0.000);  // Deep yellow-green
-                c8 = vec3(0.200, 0.000, 0.800);  // Deep blue-violet
-            } else if (pIdx == 32) {
-                // Triadic: Teal, Violet, Gold
-                c1 = vec3(0.000, 0.600, 0.600);  // Teal
-                c2 = vec3(0.600, 0.000, 0.800);  // Violet
-                c3 = vec3(1.000, 0.800, 0.000);  // Gold
-                c4 = vec3(0.200, 0.800, 0.800);  // Bright teal
-                c5 = vec3(0.800, 0.200, 1.000);  // Bright violet
-                c6 = vec3(1.000, 1.000, 0.200);  // Bright gold
-                c7 = vec3(0.000, 0.400, 0.400);  // Deep teal
-                c8 = vec3(0.400, 0.000, 0.600);  // Deep violet
-            }
+            float phase = float(segment) / 7.0;
             
             vec3 color1, color2;
-            if (segment == 0) { color1 = c1; color2 = c2; }
-            else if (segment == 1) { color1 = c2; color2 = c3; }
-            else if (segment == 2) { color1 = c3; color2 = c4; }
-            else if (segment == 3) { color1 = c4; color2 = c5; }
-            else if (segment == 4) { color1 = c5; color2 = c6; }
-            else if (segment == 5) { color1 = c6; color2 = c7; }
-            else { color1 = c7; color2 = c8; }
+            
+            // Use the random colors passed from JavaScript
+                    color1 = mix(
+                mix(u_randomColor1, u_randomColor2, sin(phase * 6.28318) * 0.5 + 0.5),
+                u_randomColor3,
+                        cos(phase * 9.42477) * 0.5 + 0.5
+                    );
+                    color2 = mix(
+                mix(u_randomColor2, u_randomColor3, cos(phase * 12.56636) * 0.5 + 0.5),
+                u_randomColor1,
+                        sin(phase * 15.70796) * 0.5 + 0.5
+                    );
             
             return mix(color1, color2, smoothstep(0.1, 0.9, frac));
         }
 
-        vec3 enhanceColor(vec3 color, float noiseValue) {
-            // Increase boost factor to match previous vibrancy
-            float boost = 1.0 + noiseValue * 0.2;  // Changed from 0.1 to 0.2
-            // Increase multiplier to match previous intensity
-            vec3 enhanced = color * boost * 1.1;   // Changed from 1.85 to 2.2
+        lowp vec3 enhanceColor(vec3 color, float noiseValue) {
+            const vec3 LUM_WEIGHTS = vec3(0.333, 0.333, 0.334);
+            float luminance = dot(color, LUM_WEIGHTS);
             
-            // Add a bit more color saturation
-            enhanced = mix(enhanced, enhanced * enhanced, 1.2);  // Add color saturation
+            // Check if the color is monochromatic (all channels nearly equal)
+            float maxDiff = max(max(abs(color.r - color.g), abs(color.g - color.b)), abs(color.b - color.r));
+            bool isMonochrome = maxDiff < 0.05;
             
-            return clamp(enhanced, 0.0, 2.0);
+            if (isMonochrome) {
+                // Enhanced monochrome processing
+                float monoBoost = 1.0 + noiseValue * (u_isLightBackground ? 0.03 : 0.06);
+                vec3 boosted = color * monoBoost;
+                
+                // Enhance contrast for monochrome
+                float contrastPower = u_isLightBackground ? 0.92 : 0.88;
+                vec3 contrasted = pow(boosted, vec3(contrastPower));
+                
+                // Add subtle tonal variation
+                float variation = sin(luminance * 6.28318 + u_time * 0.1) * 0.02;
+                contrasted += vec3(variation);
+                
+                // Ensure we maintain monochrome
+                float finalLuminance = dot(contrasted, LUM_WEIGHTS);
+                return vec3(finalLuminance);
+            } else {
+                // Adjust enhancement based on muted colors setting
+                float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04);
+                if (u_useMutedColors) {
+                    noiseInfluence *= 0.5; // Reduce noise influence for muted colors
+                }
+                
+                vec3 boosted = color * (1.0 + (1.0 - luminance) * noiseInfluence);
+                
+                float saturationStrength;
+                if (u_useMutedColors) {
+                    saturationStrength = u_isLightBackground ? 0.85 : 0.9; // Lower saturation for muted colors
+                } else {
+                    saturationStrength = u_isLightBackground ? 1.1 : 1.2; // Original saturation for vivid colors
+                }
+                
+                vec3 saturated = mix(vec3(luminance), boosted, vec3(saturationStrength));
+                
+                float contrastPower;
+                if (u_useMutedColors) {
+                    contrastPower = u_isLightBackground ? 0.97 : 0.95; // Less contrast for muted colors
+                } else {
+                    contrastPower = u_isLightBackground ? 0.95 : 0.92; // Original contrast for vivid colors
+                }
+                
+                vec3 contrasted = pow(saturated, vec3(contrastPower));
+                
+                float highlightThreshold;
+                if (u_useMutedColors) {
+                    highlightThreshold = u_isLightBackground ? 0.97 : 0.95; // Higher threshold for muted colors
+                } else {
+                    highlightThreshold = u_isLightBackground ? 0.95 : 0.92; // Original threshold for vivid colors
+                }
+                
+                vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
+                contrasted = mix(contrasted, highlights * 0.9, u_useMutedColors ? 0.4 : 0.6);
+                
+                float finalMultiplier = u_useMutedColors ? 
+                    (u_isLightBackground ? 0.9 : 0.95) :  // Lower multiplier for muted colors
+                    (u_isLightBackground ? 0.95 : 1.05);  // Original multiplier for vivid colors
+                    
+                return contrasted * finalMultiplier;
+            }
+        }
+        //VAR WITHOUT ENHANCEMENT////////////////////////////////
+        //lowp vec3 enhanceColor(vec3 color, float noiseValue) {
+            // Return the original color with no enhancement
+            //return color;
+        //}
+        //////////////////////////////////////////////////////////////
+
+        lowp vec3 blendColors(lowp vec3 a, lowp vec3 b, lowp float factor) {
+            // Screen blend can use low precision
+            lowp vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 0.8);
+            
+            // Addition blend can use low precision
+            lowp vec3 add = a + b * factor * 0.3;
+            
+            // Rotation influence calculation
+            lowp float rotationInfluence = (1.0 + sin(u_roA + u_time * 0.1)) * 0.5;
+            
+            return mix(screen, add, 2.5 + rotationInfluence);
         }
 
-        vec3 blendColors(vec3 a, vec3 b, float factor) {
-            // Pre-calculate factor multipliers
-            float f1 = factor * 0.8;
-            float f2 = factor * 0.3;
+        lowp vec2 getFlowDirection(mediump vec2 position, float time) {
+            lowp float slowTime = u_time * u_sortAnimSpeed * 0.05;
             
-            // Combine screen and add blend in one operation
-            vec3 blended = mix(
-                1.0 - (1.0 - a) * (1.0 - b * f1),  // screen blend
-                a + b * f2,                         // add blend
-                2.5 + (1.0 + sin(u_rotationAngle + u_time * 0.1)) * 0.5  // use pre-calculated sinTime
+            // Create cellular grid
+            float cellSize = 200.0;
+            vec2 cellCoord = floor(position / cellSize);
+            
+            // Generate stable random state for each cell
+            float cellState = fract(sin(dot(cellCoord, vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Create state transitions based on neighbors
+            float topState = fract(sin(dot(cellCoord + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float rightState = fract(sin(dot(cellCoord + vec2(1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float bottomState = fract(sin(dot(cellCoord + vec2(0.0, -1.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float leftState = fract(sin(dot(cellCoord + vec2(-1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Create time-varying state
+            float timeState = step(0.5, sin(cellState * 10.0 + slowTime));
+            
+            // Generate flow based on neighbor states and rules
+            vec2 flow = vec2(
+                (rightState - leftState) * cos(slowTime + cellState * 10.0),
+                (topState - bottomState) * sin(slowTime + cellState * 10.0)
             );
             
-            return blended;
+            // Add local vorticity based on cell state
+            vec2 localPos = fract(position / cellSize) - 0.5;
+            vec2 vortex = vec2(-localPos.y, localPos.x) * timeState;
+            
+            // Mouse influence section
+            if (u_mouseActive) {
+                // Calculate distance to mouse
+                float mouseDistance = length(position - u_mouse);
+                float mouseInfluenceRadius = u_mouseInfluenceRadius * u_cellSize;
+                float mouseFactor = 0.0;
+                
+                // Calculate influence factor with smooth falloff
+                if (mouseDistance < mouseInfluenceRadius) {
+                    float normalizedDist = mouseDistance / mouseInfluenceRadius;
+                    mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist));
+                    
+                    // Calculate direction vector for push effect
+                    vec2 mouseDirection = normalize(position - u_mouse);
+                    
+                    // Apply mouse influence to the flow with smooth transition
+                    flow = mix(flow, mouseDirection * 1.2, mouseFactor * 0.5 * u_mouseInfluenceRadius / 10.0);
+                    
+                    // Adjust vorticity near the mouse with smooth transition
+                    vortex *= 1.0 + mouseFactor * 1.5 * u_mouseInfluenceRadius / 10.0;
+                }
+                
+                // Trail influence - more efficient processing
+                for (int i = 0; i < 20; i++) {
+                    if (i >= u_trailCount) break;
+                    
+                    // Get trail position and calculate distance
+                    vec2 trailPos = u_trailPositions[i];
+                    float trailAge = u_trailTimes[i];
+                    
+                    // Skip too old points
+                    if (trailAge >= 3.0) continue;
+                    
+                    // Calculate trail radius with age falloff
+                    float trailRadius = mouseInfluenceRadius * 0.7 * (1.0 - trailAge / 3.0);
+                    float trailDistance = length(position - trailPos);
+                    
+                    // Only process points within radius
+                    if (trailDistance < trailRadius) {
+                        float normalizedDist = trailDistance / trailRadius;
+                        float trailFactor = (1.0 - trailAge / 3.0) * 
+                                           (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist));
+                        
+                        // Reduce strength with squared falloff and smooth transition
+                        trailFactor = trailFactor * trailFactor * 0.3 * u_mouseInfluenceRadius / 10.0;
+                        
+                        // Skip negligible influences 
+                        if (trailFactor > 0.01) {
+                            // Direction from position to trail point
+                            vec2 trailDirection = normalize(position - trailPos);
+                            
+                            // Blend influence with current flow
+                            flow = mix(flow, trailDirection, trailFactor);
+                        }
+                    }
+                }
+            }
+            
+            // Combine and normalize the final flow direction
+            return normalize(flow + vortex);
         }
 
-        float stepNoise(float noise, float steps) {
-            return floor(noise * steps) / steps;
+        // Add this function before getGlyphPattern
+        lowp vec4 getCASettings(float seed, float iter) {
+            // Use seed and iteration to select pattern type
+            float patternSeed = fract(seed * 12345.6789 + iter * 789.123);
+            int patternType = int(mod(patternSeed * 4.0, 4.0));
+            
+            // Return vec4(dirBiasStrength, surviveThreshold, birthThreshold, edgeThreshold)
+            if (patternType == 0) {
+                // Organic, flowing patterns
+                return vec4(0.4, 1.3, 2.3, 0.35);
+            } else if (patternType == 1) {
+                // Geometric, crystalline patterns
+                return vec4(0.15, 1.6, 2.7, 0.5);
+            } else if (patternType == 2) {
+                // Chaotic, detailed patterns
+                return vec4(0.3, 1.7, 2.2, 0.45);
+            } else {
+                // Symmetric patterns
+                return vec4(0.25, 1.5, 2.5, 0.4);
+            }
+        }
+
+        lowp float getGlyphPattern(vec2 cell, float depth, float seed, vec2 normalizedPos) {
+            // Use cellular grid position for scaling with more stable transitions
+            vec2 gridPos = floor(cell / 4.0) * 4.0;
+            float gridValue = max(abs(gridPos.x), abs(gridPos.y)) * 0.25;
+            float smoothGrid = smoothstep(0.0, 4.0, gridValue) * 0.5;
+            
+            // Use more stable noise calculation
+            float stabilityNoise = noise(floor(cell / 8.0) * 8.0, seed) * 0.3;
+            float scaleVariation = 1.0 + (smoothGrid * 0.4 + stabilityNoise) * u_caScaleVariation * 0.5;
+            
+            // Mouse influence calculation
+            if (u_mouseActive) {
+                vec2 approxWorldPos = cell * u_cellSize * 0.5;
+                float mouseDistance = length(approxWorldPos - u_mouse);
+                float mouseInfluenceRadius = u_mouseInfluenceRadius * 0.75 * u_cellSize;
+                
+                if (mouseDistance < mouseInfluenceRadius) {
+                    float normalizedDist = mouseDistance / mouseInfluenceRadius;
+                    float mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist)) * 0.3;
+                    scaleVariation += mouseFactor * 0.2 * u_mouseInfluenceRadius / 10.0;
+                }
+            }
+            
+            // Pre-calculate scaled cell position
+            vec2 scaledCell = floor(cell * scaleVariation * 2.0) * 0.5;
+            vec2 id = floor(scaledCell * 2.0);
+            
+            // Generate base pattern
+            float basePattern = noise(floor(id * 0.5) * 2.0, seed + floor(depth));
+            float state = step(0.5, basePattern);
+            
+            // Geometric properties
+            float angle = atan(scaledCell.y, scaledCell.x);
+            float radius = length(scaledCell) * 2.0;
+            
+            // Get CA settings
+            vec4 caSettings = getCASettings(seed, floor(depth));
+            float dirBias = sin(angle * floor(depth + 1.0)) * caSettings.x;
+            
+            // CA simulation with fixed neighbors
+            float neighbors = 0.0;
+            
+            // Calculate neighbors using individual offsets
+            vec2 neighbor;
+            float neighborState;
+            
+            // Right neighbor
+            neighbor = floor(id + vec2(1.0, 0.0));
+            neighborState = step(0.5, noise(neighbor * 0.5, seed));
+            neighbors += neighborState * (1.0 + dirBias * 0.2);
+            
+            // Left neighbor
+            neighbor = floor(id + vec2(-1.0, 0.0));
+            neighborState = step(0.5, noise(neighbor * 0.5, seed));
+            neighbors += neighborState * (1.0 + dirBias * 0.2);
+            
+            // Top neighbor
+            neighbor = floor(id + vec2(0.0, 1.0));
+            neighborState = step(0.5, noise(neighbor * 0.5, seed));
+            neighbors += neighborState * (1.0 + dirBias * 0.2);
+            
+            // Bottom neighbor
+            neighbor = floor(id + vec2(0.0, -1.0));
+            neighborState = step(0.5, noise(neighbor * 0.5, seed));
+            neighbors += neighborState * (1.0 + dirBias * 0.2);
+            
+            // Rule application
+            float depthRule = floor(mod(depth * 1.618 + seed * 3.14159, 2.0));
+            
+            if (depthRule < 1.0) {
+                float surviveThreshold = caSettings.y + sin(angle * 2.0) * 0.1;
+                state = step(surviveThreshold - 0.1, neighbors) * 
+                        step(neighbors, surviveThreshold + 1.1) * state + 
+                        step(caSettings.z - 0.1, neighbors) * 
+                        step(neighbors, caSettings.z + 0.1) * (1.0 - state);
+            } else {
+                float edgeThreshold = caSettings.w + cos(radius) * 0.1;
+                state = step(edgeThreshold, abs(neighbors - 2.0 - dirBias));
+            }
+            
+            // Geometric pattern
+            float geoPattern = smoothstep(0.4, 0.6, 
+                sin(floor(radius * (2.0 + depth * 0.5)) + 
+                    floor(angle * (4.0 + depth * 0.3)) + 
+                    floor(depth) + seed) * 0.5 + 0.5
+            );
+            
+            // Pattern blending
+            float blendFactor = 0.5 + 0.1 * sin(floor(depth) * 1.5);
+            float finalPattern = mix(state, geoPattern, blendFactor);
+            
+            // Detail noise
+            float detail = noise(floor(scaledCell * (depth + 1.0) * 2.0) * 0.5, seed + floor(depth));
+            return mix(finalPattern, detail, 0.1);
+        }
+
+        // Add HSL conversion functions before main()
+        float hue2rgb(float p, float q, float t) {
+            if (t < 0.0) t += 1.0;
+            if (t > 1.0) t -= 1.0;
+            if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+            if (t < 1.0/2.0) return q;
+            if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+            return p;
+        }
+
+        vec3 rgb2hsl(vec3 color) {
+            float maxColor = max(max(color.r, color.g), color.b);
+            float minColor = min(min(color.r, color.g), color.b);
+            float delta = maxColor - minColor;
+            
+            float h = 0.0;
+            float s = 0.0;
+            float l = (maxColor + minColor) / 2.0;
+            
+            if (delta > 0.0) {
+                s = l < 0.5 ? delta / (maxColor + minColor) : delta / (2.0 - maxColor - minColor);
+                
+                if (maxColor == color.r) {
+                    h = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
+                } else if (maxColor == color.g) {
+                    h = (color.b - color.r) / delta + 2.0;
+                } else {
+                    h = (color.r - color.g) / delta + 4.0;
+                }
+                h /= 6.0;
+            }
+            
+            return vec3(h, s, l);
+        }
+        
+        vec3 hsl2rgb(vec3 hsl) {
+            float h = hsl.x;
+            float s = hsl.y;
+            float l = hsl.z;
+            
+            float r, g, b;
+            
+            if (s == 0.0) {
+                r = g = b = l; // Achromatic
+            } else {
+                float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+                float p = 2.0 * l - q;
+                r = hue2rgb(p, q, h + 1.0/3.0);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1.0/3.0);
+            }
+            
+            return vec3(r, g, b);
         }
 
         void main() {
-            // Pre-calculate common trigonometric values at the start
-            float baseTime = u_time * 0.1;
-            float sinTime = sin(baseTime);
-            float cosTime = cos(baseTime);
-            float slowSinTime = sin(u_time * 0.05);
-            float slowCosTime = cos(u_time * 0.05);
+            // Constants can use low precision
+            const lowp int MAX_LOOP_DEPTH = 6;
             
-            vec2 coord = (vTexCoord * u_resolution - u_resolution * 0.25) * u_scaleFactor + u_translation;
-            coord = coord / u_baseScale;
+            // Coordinate calculations need medium precision
+            mediump vec2 coord = (vTexCoord * u_resolution - u_resolution * 0.25) * u_scaleFactor + u_translation;
+            coord = coord / u_bS;
+            
+            // Grid distortion calculation can use medium precision
+            mediump float gridDistortTime = u_time * u_sortAnimSpeed * 0.1;
+            mediump vec2 gridDistortCoord = coord * u_sortFrequency;
+            
+            // Most pattern calculations can use low precision
+            lowp float distortNoise1 = fbmSimplexNoise(gridDistortCoord + vec2(gridDistortTime * 0.1), 2);
+            lowp float distortNoise2 = fbmSimplexNoise(gridDistortCoord + vec2(gridDistortTime * -0.15), 2);
+            
+            // Pattern vectors can use low precision since normalized
+            lowp vec2 expPattern, stepPattern, circularPattern, squarePattern, flowPattern, smoothFlowPattern;
+            
+            // Pattern 1: Exponential waves
+            expPattern = vec2(
+                exp(-abs(mod(distortNoise1 + gridDistortTime, 2.0) - 1.0)) - 0.5,
+                exp(-abs(mod(distortNoise2 + gridDistortTime, 2.0) - 1.0)) - 0.5
+            );
+            
+            // Pattern 2: Stepped/quantized movement
+            stepPattern = vec2(
+                floor(distortNoise1 * 4.0) / 4.0,
+                floor(distortNoise2 * 4.0) / 4.0
+            );
+            
+            // Pattern 3: Circular/spiral movement
+            float angle = distortNoise1 * 6.28318;
+            circularPattern = vec2(
+                cos(angle) * distortNoise2,
+                sin(angle) * distortNoise2
+            );
+            
+            // Pattern 4: Square/diamond pattern
+            squarePattern = vec2(
+                sign(fract(distortNoise1 * 2.0) - 0.5) * abs(fract(distortNoise2 * 2.0) - 0.5),
+                sign(fract(distortNoise2 * 2.0) - 0.5) * abs(fract(distortNoise1 * 2.0) - 0.5)
+            );
+            
+            // Pattern 5: Smooth directional flow with rotation
+            flowPattern = vec2(
+                distortNoise1 * cos(gridDistortTime * 0.2) - distortNoise2 * sin(gridDistortTime * 0.15),
+                distortNoise1 * sin(gridDistortTime * 0.2) + distortNoise2 * cos(gridDistortTime * 0.15)
+            );
+            
+            // Add subtle vorticity
+            float vortexStrength = 0.3;
+            float vortexAngle = atan(coord.y, coord.x) + gridDistortTime * 0.1;
+            vec2 vortexOffset = vec2(
+                cos(vortexAngle) * length(flowPattern) * vortexStrength,
+                sin(vortexAngle) * length(flowPattern) * vortexStrength
+            );
+            
+            // Combine flow and vortex with smooth transition
+            smoothFlowPattern = flowPattern + vortexOffset;
+            
+            // Add progressive movement (modified for more organic flow)
+            float flowTime = gridDistortTime * 0.05;
+            smoothFlowPattern += vec2(
+                simplexNoise(vec2(flowTime * 0.7, 0.0), 0.0) * 0.15,
+                simplexNoise(vec2(flowTime * 0.8, 1.0), 0.0) * 0.15
+            );
+            
+            // Select pattern based on uniform
+            vec2 finalPattern;
+            if (u_currentPattern == 5) {
+                finalPattern = smoothFlowPattern;
+            } else if (u_currentPattern == 0) {
+                // Mixed patterns with smooth transitions
+                float patternMix = fract(gridDistortTime * 0.1);
+                finalPattern = mix(
+                    mix(expPattern, stepPattern, smoothstep(0.0, 0.33, patternMix)),
+                    mix(circularPattern, squarePattern, smoothstep(0.66, 1.0, patternMix)),
+                    smoothstep(0.33, 0.66, patternMix)
+                );
+            } else if (u_currentPattern == 1) {
+                finalPattern = expPattern;
+            } else if (u_currentPattern == 2) {
+                finalPattern = stepPattern;
+            } else if (u_currentPattern == 3) {
+                finalPattern = circularPattern;
+            } else {
+                finalPattern = squarePattern;
+            }
+            
+            // Replace the conditional check with random selection for grid distortion
+            mediump vec2 gridOffset = vec2(0.0);
+            
+            // Generate a pseudorandom value for this specific position and time
+            float distortionRandom = fract(sin(dot(coord + vec2(gridDistortTime), vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Random chance to apply distortion (30% probability)
+            if (distortionRandom < 0.3) {
+                // Apply different strengths based on randomness
+                float randomStrength = 0.5 + distortionRandom * 1.5; // Varies from 0.5 to 2.0
+                gridOffset = finalPattern * u_sortStrength * u_cellSize * randomStrength;
+                
+                // Apply randomized wave effect
+                float waveFreq = 0.5 + distortionRandom * 1.0; // Varies from 0.5 to 1.5
+                coord += gridOffset * (1.0 + sin(gridDistortTime * waveFreq) * 0.3);
+            }
             
             vec2 gridCoord = floor(coord / u_cellSize);
-            vec2 cellCenter = gridCoord * u_cellSize + u_cellSize * 0.5;
+            vec2 cellCenter = (gridCoord + 0.5) * u_cellSize;
+            vec2 localPos = coord - cellCenter;
+
+            // Cell boundary check can use lower precision
+            lowp float cellBoundary = u_cellSize * 0.485;
+            lowp float edgeFade = 0.005;
             
+            // Get flow direction and cellular automata state for current cell
+            vec2 flowDir = getFlowDirection(cellCenter, u_time);
+            float flowAngle = atan(flowDir.y, flowDir.x);
+            
+            // Use cellular automata state to determine cell shape
+            // This uses the same CA logic as in getFlowDirection function
+            float cellSize = 100.0;
+            vec2 caCoord = floor(cellCenter / cellSize);
+            
+            // Generate stable CA state for current cell
+            float caState = fract(sin(dot(caCoord, vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Get neighboring cell states for more context
+            float topState = fract(sin(dot(caCoord + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float rightState = fract(sin(dot(caCoord + vec2(1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float bottomState = fract(sin(dot(caCoord + vec2(0.0, -1.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float leftState = fract(sin(dot(caCoord + vec2(-1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+            
+            // Calculate cellular automata patterns
+            float slowTime = u_time * u_sortAnimSpeed * 0.05;
+            float timeVaryingState = sin(caState * 10.0 + slowTime);
+            
+            // Create a CA rule: cells become round when they are "active" in the automata
+            // This creates a more interesting pattern than just thresholding the CA state
+            float neighborSum = topState + rightState + bottomState + leftState;
+            float caRuleValue = (neighborSum > 2.0 && timeVaryingState > 0.0) || timeVaryingState > 0.7 ? 1.0 : 0.0;
+            
+            // Add some random variation for more organic distribution
+            float randomFactor = fract(sin(dot(gridCoord, vec2(43.9898, 38.233))) * 53758.5453);
+            bool isRoundCell = (caRuleValue > 0.5) || (randomFactor > 0.95 && timeVaryingState > 0.0);
+            
+            // Check boundary based on cell shape
+            bool isWithinCell;
+            if (isRoundCell) {
+                // Round cell boundary check
+                isWithinCell = length(localPos) <= cellBoundary;
+            } else {
+                // Square cell boundary check (original)
+                isWithinCell = all(lessThanEqual(abs(localPos), vec2(cellBoundary)));
+            }
+            
+            if (!isWithinCell) {
+                // Smooth edge transition based on cell shape
+                float fadeAlpha;
+                if (isRoundCell) {
+                    // Round cell edge fade
+                    float edgeDistance = length(localPos) - cellBoundary;
+                    fadeAlpha = 1.0 - smoothstep(0.0, edgeFade, edgeDistance);
+                } else {
+                    // Square cell edge fade (original)
+                    vec2 edgeDistance = abs(localPos) - vec2(cellBoundary);
+                    fadeAlpha = 1.0 - smoothstep(0.0, edgeFade, max(edgeDistance.x, edgeDistance.y));
+                }
+                if (fadeAlpha <= 0.0) discard;
+            }
+
+            // Pre-calculate values needed for the depth loop
+            float distToCenter = length(coord - cellCenter);
             float timeScale = u_time * 0.1;
             vec2 baseNoiseCoord = gridCoord * 0.1;
             vec2 timeOffset = vec2(timeScale, timeScale + 100.0);
             
-            float baseNoiseFBM = fbmSimplexNoise(gridCoord * 0.05, 3);
-
+            // Calculate distortion influence once
+            float distortionInfluence = length(gridOffset) / (u_cellSize * 2.0);
+            float baseNoiseFBM = fbmSimplexNoise(gridCoord * (u_cellSize / u_resolution.y) * 0.05, 4) + distortionInfluence * 0.2;
+            
             vec2 noiseOffset = vec2(
-                noise(baseNoiseCoord + timeOffset.xx, u_noiseSeed),
-                noise(baseNoiseCoord + timeOffset.yy, u_noiseSeed)
+                noise(baseNoiseCoord + timeOffset.xx, u_nS),
+                noise(baseNoiseCoord + timeOffset.yy, u_nS)
             );
             
-            float gridSize = u_cellSize * mix(0.3, 2.5, baseNoiseFBM);
+            // Pre-calculate common values for the loop
+            float gridSize = u_cellSize * mix(0.3, 2.5, baseNoiseFBM + distortionInfluence * 0.2);
             vec2 localCoord = mod(coord + noiseOffset, gridSize);
             
-            float randomAngle = floor(noise(gridCoord + noiseOffset, u_noiseSeed) * 4.0) * (M_PI * 0.5);
-            mat2 rotationMatrix = getRotationMatrix(randomAngle);
-            vec2 rotatedCoord = rotationMatrix * localCoord;
+            float randomAngle = floor(noise(gridCoord + noiseOffset, u_nS) * 4.0) * (M_PI * 0.5);
+            float sinA = fastSin(randomAngle);
+            float cosA = fastCos(randomAngle);
+            vec2 rotatedCoord = vec2(
+                localCoord.x * cosA - localCoord.y * sinA,
+                localCoord.x * sinA + localCoord.y * cosA
+            );
             
-            float smoothedTime = u_time * 0.01 + sin(u_time * 0.005) * 0.005;
+            float smoothedTime = u_time * 0.01 + simplexNoise2(vec2(u_time * 0.3, 50.0), u_nS) * 0.005;
             
-            vec2 noiseInput1 = rotatedCoord * 0.1 + smoothedTime;
-            vec2 noiseInput2 = (rotatedCoord + gridCoord * gridSize) * u_noiseScale;
+            vec2 noiseInput1 = rotatedCoord * ((u_cellSize / u_resolution.y) * 1.0) + smoothedTime;
+            vec2 noiseInput2 = (rotatedCoord + gridCoord * gridSize) * ((u_cellSize / u_resolution.y) * 1.0) * u_noiseScale;
             
-            float flowNoise = fbmSimplexNoise(noiseInput1, 3);
+            float flowNoise = fbmSimplexNoise(noiseInput1, 6);
             vec2 animatedCoord = noiseInput2 + vec2(
-                cos(flowNoise * 6.28318), 
-                sin(flowNoise * 6.28318)
+                simplexNoise(vec2(flowNoise, u_time * 0.05), u_nS),
+                simplexNoise(vec2(flowNoise, u_time * 0.05 + 100.0), u_nS)
             ) * u_flowSpeed * 0.005;
             
-            float curlNoise = fbmSimplexNoise(animatedCoord * 1.5 + vec2(u_noiseSeed), 4);
+            float curlNoise = fbmSimplexNoise(animatedCoord * (u_cellSize / u_resolution.y) * 20.0 + vec2(u_nS), 8);
             animatedCoord += 4.0 * vec2(
                 cos(curlNoise * 6.28318),
                 sin(curlNoise * 6.28318)
             );
-            float baseNoise = fbmSimplexNoise(animatedCoord + noiseOffset, 3);
             
-            vec4 color = vec4(0.0);
-            const int MAX_LOOP_DEPTH = 8;
+            // Color blending can use low precision
+            lowp vec4 color = vec4(0.0);
             
-            float rawCombinedNoise = (baseNoise * 0.5 + baseNoiseFBM * 0.5 + 1.0) * 0.4; 
-            float combinedNoise = stepNoise(rawCombinedNoise, 4.0);  
-
+            // Main loop variables
+            mediump float depthNoiseValue, depthFactor, colorT;
+            lowp vec3 color1, color2, enhancedColor1, enhancedColor2, blendedColor;
+            
+            // Calculate base noise values that won't change in the loop
+            float baseNoise = fbmSimplexNoise(animatedCoord * (u_cellSize / u_resolution.y) * 0.15 + noiseOffset, 5);
+            float combinedNoise = (baseNoise * 0.3 + baseNoiseFBM * 0.7 + 3.0) * 0.3;
+            
+            // Calculate depth once
             float clampedNoise = clamp(combinedNoise, 0.0, 1.0);
             int dynamicDepth = int(clamp(
                 clampedNoise * float(u_maxDepth),
@@ -664,60 +1148,105 @@
                 min(float(u_maxDepth), float(MAX_LOOP_DEPTH))
             ));
             
-            float t = 0.5 + 0.5 * sin(u_time * 2.0 * u_flowSpeed);
-            float angleInfluence = sin(u_rotationAngle * 0.1 + baseTime * 2.0) * 0.5 + 0.5;
-            float blendFactor = t * t * (3.0 - 2.0 * t) * (1.0 + combinedNoise * 0.6 + angleInfluence);
+            // Pre-calculate threshold and blend factor outside loop
+            float threshold = 0.55 - (0.15 * pow(1.0 - u_bS, 2.0));
             
-            int paletteIndex1 = int(u_paletteIndex1);
-            int paletteIndex2 = int(u_paletteIndex2);
+            float t = simplexNoise2(vec2(u_time * 0.01), 0.0) * 0.5 + 0.5;
+            float angleInfluence = simplexNoise2(vec2(u_time * 0.005), 0.0) * 0.5 + 0.5;
+            float blendFactor = t * t * (3.0 - 2.0 * t) * (1.0 + combinedNoise * 0.8 + angleInfluence * 1.2);
             
-            vec3 color1Base = getColorFromPalette(paletteIndex1, 0.5);
-            vec3 color2Base = getColorFromPalette(paletteIndex2, 0.5);
+            // Prepare edge values for color transitions
+            float edge0 = 0.2 + sin(u_time * 0.0002) * 0.3;
+            float edge1 = 0.8 + cos(u_time * 0.0002) * 0.5;
             
+            // Process each depth level with minimal branching
             for (int depth = 0; depth < MAX_LOOP_DEPTH; depth++) {
+                // Break condition at the top to avoid unnecessary loop iterations
                 if (depth >= dynamicDepth) break;
                 
-                float depthNoiseValue = noise(animatedCoord * float(depth + 1), u_noiseSeed);
+                depthNoiseValue = noise(animatedCoord * float(depth + 1), u_nS);
+                depthFactor = float(depth) / float(MAX_LOOP_DEPTH);
                 
-                float threshold = 0.6 + combinedNoise * 0.6;
-                if (depthNoiseValue > threshold) {
-                    float size = gridSize / max(exp2(float(depth)), 0.0001);
-                    vec2 cellCoord = mod(coord, size);
-                    
-                    float depthFactor = float(depth) / float(MAX_LOOP_DEPTH);
-                    float circleSize = mix(0.45, 0.05, depthFactor);  
-                    
-                    float distToCenter = length(coord - cellCenter);
-                    if (distToCenter > u_cellSize * circleSize) {
-                        continue;  
-                    }
-                    
-                    if (cellCoord.x < size * 0.5 && cellCoord.y < size * 0.5) {
-                        float edge0 = 0.2 + slowSinTime * 0.2;
-                        float edge1 = 0.8 + slowCosTime * 0.2;
-                        float colorT = smoothstep(edge0, edge1, depthFactor + combinedNoise * 0.6);
-
-                        // Simple lerp between pre-calculated colors instead of full palette lookup
-                        vec3 color1 = mix(color1Base, getColorFromPalette(paletteIndex1, colorT), 0.5);
-                        vec3 color2 = mix(color2Base, getColorFromPalette(paletteIndex2, 1.0 - colorT), 0.5);
-
-                        float depthBoost = 1.0 + (1.0 - depthFactor) * 0.5;
-                        color1 *= depthBoost;
-                        color2 *= depthBoost;
-                        
-                        vec3 enhancedColor1 = enhanceColor(color1, combinedNoise);
-                        vec3 enhancedColor2 = enhanceColor(color2, combinedNoise);
-                        
-                        vec3 blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
-                        
-                        color.rgb *= 1.0;
-                        color += vec4(blendedColor, 1.0) * (1.0 - depthNoiseValue * 0.5);
-                    }
+                // Skip early if noise threshold not met
+                if (depthNoiseValue <= threshold) {
+                    continue;
                 }
+                
+                // Get glyph parameters
+                float currentSize = mix(0.3, 1.2, depthFactor) * u_cellSize;
+                
+                // Rotate point to align with flow
+                vec2 rotatedP = vec2(
+                    localPos.x * fastCos(-flowAngle) - localPos.y * fastSin(-flowAngle),
+                    localPos.x * fastSin(-flowAngle) + localPos.y * fastCos(-flowAngle)
+                );
+                
+                // Glyph grid calculation
+                // Map flow influence to offset range
+                float flowStrength = length(flowDir);  // Get magnitude of flow vector
+                float mappedOffset = mix(0.5, 1.2, flowStrength);  // Map to desired range
+                vec2 glyphCell = floor(rotatedP / currentSize + mappedOffset);
+                vec2 localGlyphPos = rotatedP - glyphCell * currentSize;
+                
+                // Get glyph pattern
+                float glyphNoise = getGlyphPattern(glyphCell, float(depth), u_nS, vTexCoord);
+                
+                // Simplified glyph checks
+                bool centerActive = abs(glyphCell.x) < 0.5 && abs(glyphCell.y) < 0.5;
+                bool noiseActive = length(glyphCell) < 1.5 && glyphNoise > 0.5;
+                bool lineActive = abs(localGlyphPos.x) < currentSize * 0.15 || abs(localGlyphPos.y) < currentSize * 0.15;
+                
+                bool insideGlyph = centerActive || noiseActive || lineActive;
+                
+                // Skip if not inside glyph
+                if (!insideGlyph) {
+                    continue;
+                }
+                
+                // Color calculation
+                colorT = smoothstep(edge0, edge1, depthFactor + combinedNoise * 0.9);
+                
+                color1 = getColorFromPalette(colorT);
+                color2 = getColorFromPalette(1.0 - colorT);
+                
+                // Apply depth boost
+                float depthBoost = 1.2 + (1.0 - depthFactor) * 0.8;
+                color1 *= depthBoost;
+                color2 *= depthBoost;
+                
+                enhancedColor1 = enhanceColor(color1, combinedNoise);
+                enhancedColor2 = enhanceColor(color2, combinedNoise);
+                
+                blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
+                
+                // Add to final color with alpha blending
+                color.rgb *= 1.0;
+                color += vec4(blendedColor, 1.0) * (1.0 - depthNoiseValue * 0.7);
             }
             
+            // Final color check
             if (color.a == 0.0) {
-                color = vec4(0.0, 0.0, 0.0, 1.0);
+                color = u_baseColor;
+            }
+            
+            // Add mouse circle visualization before finalizing the color
+            if (u_mouseActive) {
+                // Calculate distance from current pixel to mouse position
+                float mouseDistance = length(coord - u_mouse);
+                
+                // Create a larger circle with 10 cell size diameter
+                float circleRadius = u_cellSize * 10.0; // Increased to 10 cells
+                
+                // Note: We're keeping the mouse position active for the flow field and glyph effects
+                // but removing the color blending effects for the cursor itself
+                
+                // Process trail points
+                for (int i = 0; i < 20; i++) { // Use constant 20 since GLSL doesn't support variable loop limits well
+                    if (i >= u_trailCount) break; // Skip if we've processed all actual trail points
+                    
+                    // Get trail position - needed for flow field interactions
+                    // But we're not applying any color effects
+                }
             }
             
             gl_FragColor = color;
@@ -725,319 +1254,510 @@
     </script>
 
     <script>
-        const BASE_HEIGHT = 900; 
-        let baseScale = 1.0;    
-        let theShader;
-        let displayMode = 0;
-        let cellSize = 120;     
-        let noiseScale = 0.0001;
-        let maxDepth;
-        let noiseSeed;
-        let flowSpeed = 0.005;
-        let paletteIndex1, paletteIndex2;
-        let randomScaleSeed;
-        let rotationAngle;
-        let noiseOffsetX, noiseOffsetY;
-        let scaleFactor = 30;
-        let translateX = 0, translateY = 0;
-        let initialTranslateX = 0, initialTranslateY = 0;
-        let previousMouseX, previousMouseY;
-        let amplitudeValues = [0.05, 0.075, 0.1];
-        let isPlaying = true;
-        let startTime = 0;
-        let currentTime = 0;
-        let luminosity = 1.5;
-        let vibrancy = 5.5;
-        let fpsBuffer = [];
-        const FPS_BUFFER_LENGTH = 30; 
-        let lastLoop = performance.now();
-        let showFPS = true;  
+        // Configuration
+        const TARGET_FRAMERATE = 60; // Target frame rate (can be lowered for better performance)
+        let lastFrameTime = 0;      // For frame rate control
+        let currentFPS = 60;        // Track current FPS
+        let fpsUpdateTime = 0;      // Time of last FPS update
+        const FPS_UPDATE_INTERVAL = 500; // Update FPS every 500ms
+        
+        let bS = 1.0;     
+        const cV = 6;  
+        let tS;
+        let dM = 0;
+        let cS;      
+        let bN = 0.002;  
+        let nS;
+        let fS = 0.005;
+        let rSS;
+        let roA;
+        let nOX, nOY;
+        let scF = 40;
+        let tX = 0, tY = 0;
+        let iTX = 0, iTY = 0;
+        let pMX, pMY;
+        let amV = [0.1, 0.075, 0.05]; 
+        let isP = false; // Start paused
+        let stT = 0;
+        let cuT = 0;
+        let lastPausedTime = 0; // Initialize paused time to 0
+        let lum = 1.5;
+        let vib = 2.5;
+        let soS = 0.1;     
+        let soF = 0.1;   
+        let soA = 0.15;     
+        let cuP;                  
+        
+        // Add mouse tracking variables
+        let mouseX = 0, mouseY = 0;
+        let panMouseX = 0, panMouseY = 0; // Add separate variables for panning
+        let isMouseOnCanvas = false;
+        let mouseInfluenceFactor = 0.0; // Add fade-in factor for mouse influence
+        const MOUSE_INFLUENCE_FADE_SPEED = 0.15; // Speed of fade-in/out
 
-        // Add after the existing variables
-        const MIN_FPS = 24;
-        const DEFAULT_PIXEL_DENSITY = 2;
-        const MIN_PIXEL_DENSITY = 0.5;
-        const MAX_PIXEL_DENSITY = 2;
-        let currentPixelDensity = DEFAULT_PIXEL_DENSITY;
-        let fpsCheckCounter = 0;
-        const FPS_CHECK_INTERVAL = 10;  // Check every 30 frames
-
-        function adjustPixelDensity(fps) {
-            if (fpsCheckCounter++ < FPS_CHECK_INTERVAL) return;
-            fpsCheckCounter = 0;
-            
-            let previousDensity = currentPixelDensity;
-            
-            if (fps < MIN_FPS && currentPixelDensity > MIN_PIXEL_DENSITY) {
-                currentPixelDensity = Math.max(MIN_PIXEL_DENSITY, currentPixelDensity - 0.25);
-                pixelDensity(currentPixelDensity);
-                console.log(`Reduced pixel density to ${currentPixelDensity} (FPS: ${fps})`);
-            } else if (fps > MIN_FPS + 10 && currentPixelDensity < DEFAULT_PIXEL_DENSITY) {
-                currentPixelDensity = Math.min(DEFAULT_PIXEL_DENSITY, currentPixelDensity + 0.25);
-                pixelDensity(currentPixelDensity);
-                console.log(`Increased pixel density to ${currentPixelDensity} (FPS: ${fps})`);
-            }
-            
-            // Update cell size if pixel density changed
-            if (previousDensity !== currentPixelDensity) {
-                cellSize = calculateCellSize(currentPixelDensity);
-                console.log(`Updated cell size to ${cellSize}`);
-            }
-        }
-
-        function calculateCellSize(pixelDensity) {
-            // Base cell size is 100 at pixel density 2
-            const BASE_CELL_SIZE = 100;
-            const BASE_PIXEL_DENSITY = 2;
-            
-            // Inverse proportion: as density goes down, size goes up
-            return BASE_CELL_SIZE * (BASE_PIXEL_DENSITY / pixelDensity);
-        }
+        // Add trail system
+        const MAX_TRAIL_POINTS = 20; // Maximum number of trail points to store
+        const MIN_DISTANCE = 5; // Minimum distance between trail points
+        const TRAIL_LIFETIME = 3000; // Time in ms before a trail point disappears
+        let trailPoints = []; // Array to store trail points [{x, y, time}]
+        
+        // Cache canvas element reference
+        let canvasElement;
+        
+        let tog = {
+        };
 
         let inscription_id = window.location.pathname.split("/").pop();
         
-        // REMOVE AFTER TESTING!!!
+        // DEVELOPMENT CODE - REMOVE BEFORE PRODUCTION DEPLOYMENT
+        // This code generates a random inscription ID for testing
+        // ===================================================
             let chars = "0123456789abcdefghijklmnopqrstuvwsyz";
             inscription_id = new URLSearchParams(window.location.search).get("seed") || Array(64).fill(0).map(_=>chars[(Math.random()*chars.length)|0]).join('');
-        // REMOVE AFTER TESTING!!!
+        // ===================================================
 
-        // BUGGY SEEDS - for you to test :)
+        // Debug logging - uncomment if needed for debugging
+        // console.log('Inscription ID:', inscription_id)
 
-        // kftyk5iyj23pt7y3g3wib9vc4ebqs3pmsszbz1ehibedey2lgfe0pqu0m1078re5
-        // q6vlo1umitq2d5ugtlvc1h0j78gvqwr1yp689jzbq3i6h1cl4y6iigfqdh7skt3i
-        // 9d7fq3qtqgpuvsdo384maqs8q2ydai2nrg8ik8sdtw5ypa7selz3y3y1q2no2gio
-        // d22y74bs6dlq3o23d4zl2cjkge8rqsewu2nh393b7ds87ts5wvla50hrhln99lbf
-        // wraa45m0mfd2to4l1gfer4h2nawueqsf4ynjyoby8hdya62zamvbhzsir45hstot
-
-        // Class to use inscription ID hash as a PRNG (PseudoRandom Number Generator).
-        // Helpful with vanilla JS.
-        // Can be replaced or removed if you use another PRNG.
         class Rnd{
             constructor(seed) {
                 const i=Math.imul,h=t=>{let e,l=0;for(e=1779033703^t.length;l<t.length;l++){let h=e^t.charCodeAt(l);e=i(h,3432918353),e=e<<13|e>>>19}return()=>(e=i(e^e>>>16,2246822507),e=i(e^e>>>13,3266489909),(e^=e>>>16)>>>0)},a=(e,r,t,a)=>()=>{let l=((e|=0)+(r|=0)|0)+(a|=0)|0;return a=a+1|0,e=r^r>>>9,r=(t|=0)+(t<<3)|0,t=(t=t<<21|t>>>11)+l|0,(l>>>0)/4294967296},X=h(seed);this.R=a(X(),X());
             }
-            D=_=>this.R();                  // returns a random value in range <0, 1)
-            N=(r,t)=>r+(t-r)*this.D();      // returns a random number in range <r, t)
-            I=(r,t)=>0|this.N(r,t+1);       // returns a random integer in range <r, t>
-            B=r=>this.D()<r                 // returns true if lower than r
+            D=_=>this.R();                  
+            N=(r,t)=>r+(t-r)*this.D();     
+            I=(r,t)=>0|this.N(r,t+1);      
+            B=r=>this.D()<r               
         };
         let R = new Rnd(inscription_id)
 
         console.log('Inscription ID:', inscription_id)
 
-        function updateTranslationForCenter() {
-            let visibleWidth = width / scaleFactor;
-            let visibleHeight = height / scaleFactor;
+
+        function upTC() {
+            let viW = width / scF;
+            let viH = height / scF;
             
-            translateX = -width/2 + (visibleWidth * scaleFactor/2);
-            translateY = -height/2 + (visibleHeight * scaleFactor/2);
+            // Calculate the relative position from the center
+            let relX = (tX + width/2) / (width/scF);
+            let relY = (tY + height/2) / (height/scF);
+            
+            // Apply the relative position with the new scale
+            tX = -width/2 + (relX * width/scF);
+            tY = -height/2 + (relY * height/scF);
         }
 
         function preload() {
             let vertexShader = document.getElementById('vertex-shader').textContent;
             let fragmentShader = document.getElementById('fragment-shader').textContent;
-            theShader = createShader(vertexShader, fragmentShader);
-            console.log("Shader created:", theShader);
+            tS = createShader(vertexShader, fragmentShader);
+        }
+
+        function suEH() {
+           
+            const canvas = document.querySelector('canvas');
+            
+            // Add mouse event listeners for panning
+            let isDragging = false;
+            let startX, startY;
+            let startTX, startTY;
+            
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startTX = tX;
+                startTY = tY;
+                canvas.style.cursor = 'grabbing';
+            });
+            
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    // Apply the translation directly in shader space
+                    const dx = -(e.clientX - startX);
+                    const dy = (e.clientY - startY);
+                    tX = startTX + dx*8;
+                    tY = startTY + dy*8;
+                }
+            });
+            
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+            
+            canvas.addEventListener('mouseleave', () => {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+            
+            // Set initial cursor style
+            canvas.style.cursor = 'grab';
+            
+            const keyState = new Set();
+            
+            document.addEventListener('keydown', (e) => {
+                
+                if (keyState.has(e.key)) return;
+                keyState.add(e.key);
+                
+                switch(e.key.toLowerCase()) {
+                    case 'a':
+                        dM = (dM + 1) % 4;  // Changed from % 3 to % 4 to include the new case 3
+                        upCS();
+                        break;
+                        
+                    case 'r':
+                        tX = iTX;
+                        tY = iTY;
+                        upTC();
+                        break;
+                        
+                    case 's':
+                        isP = !isP;
+                        if (isP) {
+                            // When starting/resuming animation
+                            stT = millis() - (lastPausedTime * 1000); // Adjust start time to account for paused time
+                        } else {
+                            // When pausing animation
+                            lastPausedTime = cuT; // Store current time
+                        }
+                        break;
+                        
+                    case '1':
+                    case '2':
+                    case '3':
+                        {  
+                            const cuD = pixelDensity();
+                            const nwD = e.key === '1' ? 4 : (e.key === '2' ? 5 : 5.5);
+                            
+                            
+                            pixelDensity(nwD);
+                            draw();
+                            
+                           
+                            const tiS = geT();
+                            const prefix = e.key === '1' ? 'shader_' : 'shader_hires_';
+                            saveCanvas(prefix + tiS, 'png');
+                            
+                           
+                            pixelDensity(cuD);
+                            draw();
+                            break;  
+                        }
+                         
+                    case 'd':
+                        
+                        if (scF === 40) {
+                            scF = 15;
+                        } else {
+                            scF = 40;
+                        }
+                        upTC();
+                        break;
+                        
+                    
+                    case 'k':
+                        if (!isR) {
+                            stRe();
+                        } else {
+                            noRe();
+                        }
+                        break;
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                keyState.delete(e.key);
+            });
+        }
+
+        
+        function geT() {
+            const d = new Date();
+            const pad = n => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
         }
 
         function setup() {
-            console.log("Starting setup...");
+            let canvas = createCanvas(windowWidth, windowHeight, WEBGL);
+            // Store reference to canvas element
+            canvasElement = document.querySelector('canvas');
             
-            console.log("inscription_id:", inscription_id);
+            let gl = canvas.GL;
+            gl.disable(gl.DEPTH_TEST);  
+            gl.disable(gl.CULL_FACE);   
+            gl.disable(gl.DITHER);      
+            gl.disable(gl.STENCIL_TEST);
+            
+            pixelDensity(2);
+            
+            noStroke();
+            shader(tS);
             
             if (!inscription_id) {
-                console.error("Could not retrieve inscription ID");
                 return;
             }
             
-            createCanvas(windowWidth, windowHeight, WEBGL);
-            noStroke();
-            shader(theShader);
-            pixelDensity(2);
+            // Initialize animation state with proper synchronization
+            const currentTime = millis();
+            stT = currentTime;
+            lastPausedTime = 0;
+            cuT = 0;
+            isP = false; // Start paused
             
-            updateCanvasSize();
+            cuP = R.I(0, 5);
             
-            noiseOffsetX = R.I(0,2000)
-            noiseOffsetY = R.I(0,2000)
+            tS = createShader(
+                document.getElementById('vertex-shader').textContent,
+                document.getElementById('fragment-shader').textContent
+            );
+            shader(tS);
+            tS.setUniform('u_currentPattern', cuP);
+            
+            upCS();
+            
+            nOX = R.I(0,2000)
+            nOY = R.I(0,2000)
 
             let shiftX = -width/2;
             let shiftY = -height/2;
-            initialTranslateX = shiftX;
-            initialTranslateY = shiftY;
-            translateX = shiftX;
-            translateY = shiftY;
+            iTX = shiftX;
+            iTY = shiftY;
+            tX = shiftX;
+            tY = shiftY;
 
-            noiseSeed = R.I(0,1000)
-
-            let u_maxDepth = 100 + R.I(0,101)
-
-            paletteIndex1 = R.I(0,32)
-            paletteIndex2 = R.I(0,32)
-
-            randomScaleSeed = R.I(0,1000)
-
-            rotationAngle = R.I(0, 360)
+            nS = R.I(0,1000)
+            rSS = R.I(0,1000)
+            roA = R.I(0, 360)
             
-            let tempRand = R.I(0, amplitudeValues.length - 1);
-            let randomAmplitude = amplitudeValues[ tempRand];
+            let teR = R.I(0, amV.length - 1);
+            let raA = amV[teR];
+            let seF = R.N(10.0, 0.000001);  
+            cS = windowHeight / cV;
+            bN = R.N(0.002, 0.005);
+            let baM = R.N(0.5, 2.0);  
 
-            let initialFreqOptions = [0.00005, 0.0005, 0.005];
-            let selectedFreq = initialFreqOptions[ R.I(0,2) ];
+            function caCD(color1, color2) {
+                const dr = color1[0] - color2[0];
+                const dg = color1[1] - color2[1];
+                const db = color1[2] - color2[2];
+                return Math.sqrt(dr * dr + dg * dg + db * db);
+            }
 
-            theShader.setUniform('u_paletteIndex1', paletteIndex1);
-            theShader.setUniform('u_paletteIndex2', paletteIndex2);
-            theShader.setUniform('u_noiseSeed', noiseSeed);
-            theShader.setUniform('u_randomScaleSeed', randomScaleSeed);
-            theShader.setUniform('u_rotationAngle', radians(rotationAngle));
-            theShader.setUniform('u_noiseOffset', [noiseOffsetX, noiseOffsetY]);
-            theShader.setUniform('u_amplitude', randomAmplitude);
-            theShader.setUniform('u_maxDepth', u_maxDepth);
-            theShader.setUniform('u_backgroundColor', [0.0, 0.0, 0.0, 1.0]);
-            theShader.setUniform('u_luminosity', luminosity);
-            theShader.setUniform('u_vibrancy', vibrancy);
-            theShader.setUniform('u_initialFreq', selectedFreq);
-
-            scaleFactor = 30;
-            updateTranslationForCenter();
-
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'a' || e.key === 'A') {
-                    displayMode = (displayMode + 1) % 3;
-                    updateCanvasSize();
-                    console.log('Display mode:', ['fullscreen', '16:9', '9:16'][displayMode]);
+            // Add monochromatic palette definitions
+            const MONO_PALETTES = {
+                HIGH_CONTRAST: {
+                    dark: [0.02, 0.02, 0.02],
+                    mid: [0.35, 0.35, 0.35],
+                    light: [0.85, 0.85, 0.85]
+                },
+                LOW_CONTRAST: {
+                    dark: [0.15, 0.15, 0.15],
+                    mid: [0.35, 0.35, 0.35],
+                    light: [0.55, 0.55, 0.55]
+                },
+                INFRARED: {
+                    dark: [0.05, 0.05, 0.05],
+                    mid: [0.3, 0.3, 0.3],
+                    light: [0.8, 0.8, 0.8]
+                },
+                SEPIA: {
+                    dark: [0.1, 0.08, 0.06],
+                    mid: [0.35, 0.3, 0.25],
+                    light: [0.7, 0.65, 0.6]
+                },
+                SPLIT_TONE: {
+                    dark: [0.1, 0.1, 0.15],
+                    mid: [0.3, 0.3, 0.35],
+                    light: [0.6, 0.55, 0.5]
                 }
-                if (e.key === 'r' || e.key === 'R') { 
-                    updateTranslationForCenter();
-                    scaleFactor = 30;
-                    console.log('Position reset');
+            };
+
+            let isMonochrome = false;
+            let currentMonoPalette = null;
+            let useMutedColors = R.D() < 0.5;
+
+            function geRC(brightnessType = 'light', baseHue = null, existingColors = []) {
+                if (!isMonochrome && R.D() < 0.05) {
+                    isMonochrome = true;
+                    const paletteKeys = Object.keys(MONO_PALETTES);
+                    currentMonoPalette = MONO_PALETTES[paletteKeys[Math.floor(R.D() * paletteKeys.length)]];
                 }
-                if (e.key === 's' || e.key === 'S') {
-                    isPlaying = !isPlaying;
-                    if (isPlaying) {
-                        startTime = millis() - currentTime * 1000;
+
+                if (isMonochrome) {
+                    return {
+                        color: currentMonoPalette[brightnessType.toLowerCase()],
+                        hue: 0
+                    };
+                }
+
+                const miCD = 0.3;
+                let at = 0;
+                const maA = 10;
+
+                while (at < maA) {
+                    let h = brightnessType === 'mid' && baseHue !== null ? (baseHue + 0.5) % 1.0 : R.D();
+                    let s = useMutedColors ? R.N(0.3, 0.5) : R.N(0.7, 0.75);
+                    let v;
+
+                    if (useMutedColors) {
+                        switch(brightnessType) {
+                            case 'dark': v = R.N(0.2, 0.35); break;
+                            case 'mid': v = R.N(0.45, 0.6); break;
+                            case 'light': v = R.N(0.7, 0.85); break;
+                        }
                     } else {
-                        currentTime = (millis() - startTime) / 1000.0;
-                    }
-                    console.log('Animation ' + (isPlaying ? 'playing' : 'paused'));
-                }
-                if (e.key === '1') {
-                    let currentDensity = pixelDensity();
-                    
-                    pixelDensity(4);
-                    
-                    draw();
-                    
-                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
-                    saveCanvas('shader_' + timestamp, 'png');
-                    
-                    pixelDensity(currentDensity);
-                    
-                    draw();
-                    
-                    console.log('Canvas saved as shader_' + timestamp + '.png');
-                }
-                if (e.key === '2') {
-                    let currentDensity = pixelDensity();
-                    
-                    pixelDensity(5);
-                    
-                    draw();
-                    
-                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
-                    saveCanvas('shader_hires_' + timestamp, 'png');
-                    
-                    pixelDensity(currentDensity);
-                    
-                    draw();
-                    
-                    console.log('High-res canvas saved as shader_hires_' + timestamp + '.png');
-                }
-                if (e.key === '3') {
-                    let currentDensity = pixelDensity();
-                    
-                    pixelDensity(5.5);
-                    
-                    draw();
-                    
-                    let timestamp = year() + nf(month(), 2) + nf(day(), 2) + '_' + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
-                    saveCanvas('shader_hires_' + timestamp, 'png');
-                    
-                    pixelDensity(currentDensity);
-                    
-                    draw();
-                    
-                    console.log('Very high-res canvas saved as shader_hires_' + timestamp + '.png');
-                }
-                if (e.key === 'd' || e.key === 'D') {
-                    if (scaleFactor === 30) scaleFactor = 10;
-                    else scaleFactor = 30;
-                    updateTranslationForCenter();
-                    console.log('Scale factor:', scaleFactor);
-                }
-                if (e.key === 'f' || e.key === 'F') {
-                    showFPS = !showFPS;
-                    if (!showFPS) {
-                        let fpsDisplay = document.getElementById('fpsDisplay');
-                        if (fpsDisplay) {
-                            fpsDisplay.remove();
+                        switch(brightnessType) {
+                            case 'dark': v = R.N(0.15, 0.3); break;
+                            case 'mid': v = R.N(0.5, 0.65); break;
+                            case 'light': v = R.N(0.85, 1.0); break;
                         }
                     }
-                }
-            });
-            startTime = millis();
-            currentPixelDensity = DEFAULT_PIXEL_DENSITY;
-            pixelDensity(currentPixelDensity);
-        }
 
-        function calculateFPS() {
-            let thisLoop = performance.now();
-            let fps = 1000 / (thisLoop - lastLoop);
-            lastLoop = thisLoop;
-            
-            fpsBuffer.push(fps);
-            if (fpsBuffer.length > FPS_BUFFER_LENGTH) {
-                fpsBuffer.shift();
+                    let i = Math.floor(h * 6);
+                    let f = h * 6 - i;
+                    let p = v * (1 - s);
+                    let q = v * (1 - f * s);
+                    let t = v * (1 - (1 - f) * s);
+
+                    let r, g, b;
+                    switch (i % 6) {
+                        case 0: r = v, g = t, b = p; break;
+                        case 1: r = q, g = v, b = p; break;
+                        case 2: r = p, g = v, b = t; break;
+                        case 3: r = p, g = q, b = v; break;
+                        case 4: r = t, g = p, b = v; break;
+                        case 5: r = v, g = p, b = q; break;
+                    }
+
+                    const newColor = [r, g, b];
+                    let diC = true;
+                    for (const existingColor of existingColors) {
+                        if (caCD(newColor, existingColor) < miCD) {
+                            diC = false;
+                            break;
+                        }
+                    }
+
+                    if (diC || at === maA - 1) {
+                        return { color: newColor, hue: h };
+                    }
+                    at++;
+                }
             }
-            
-            let avgFPS = fpsBuffer.reduce((a, b) => a + b) / fpsBuffer.length;
-            return Math.round(avgFPS);
+
+            let liR = geRC('light', null, []);
+            let rC1 = liR.color;
+            let miR = geRC('mid', liR.hue, [rC1]);
+            let rC2 = miR.color;
+            let rC3 = geRC('dark', null, [rC1, rC2]).color;
+
+            let baC = [
+                [0.05, 0.05, 0.05, 1.0],
+                [0.90, 0.87, 0.82, 1.0]
+            ];
+
+            let sBaC = baC[R.D() < 0.6 ? 0 : 1];
+            let liBc = sBaC[0] > 0.5;
+
+            // Set all uniforms
+            tS.setUniform('u_nS', nS);
+            tS.setUniform('u_rSS', rSS);
+            tS.setUniform('u_roA', radians(roA));
+            tS.setUniform('u_nOS', [nOX, nOY]);
+            tS.setUniform('u_amplitude', raA);
+            tS.setUniform('u_maxDepth', 6);
+            tS.setUniform('u_luminosity', lum);
+            tS.setUniform('u_vibrancy', vib);
+            tS.setUniform('u_initialFreq', seF);
+            tS.setUniform('u_sortStrength', soS);
+            tS.setUniform('u_sortFrequency', soF);
+            tS.setUniform('u_sortAnimSpeed', soA);
+            tS.setUniform('u_baseModulation', baM);
+            tS.setUniform('u_baseColor', sBaC);
+            tS.setUniform('u_isLightBackground', liBc);
+            tS.setUniform('u_useMutedColors', useMutedColors);
+            tS.setUniform('u_randomColor1', rC1);
+            tS.setUniform('u_randomColor2', rC2);
+            tS.setUniform('u_randomColor3', rC3);
+
+            // Disable mouse and trail effects
+            tS.setUniform('u_mouse', [0.0, 0.0]);
+            tS.setUniform('u_mouseActive', false);
+            tS.setUniform('u_mouseInfluenceRadius', 0.0);
+            tS.setUniform('u_trailPositions', new Array(MAX_TRAIL_POINTS * 2).fill(0));
+            tS.setUniform('u_trailTimes', new Array(MAX_TRAIL_POINTS).fill(TRAIL_LIFETIME / 1000.0));
+            tS.setUniform('u_trailCount', 0);
+
+            scF = 40;
+            upTC();
+            suEH();
+
+            stT = millis();
+            let cASV = R.N(1.5, 3.0);
+            tS.setUniform('u_caScaleVariation', cASV);
         }
 
         function draw() {
-            clear();
-            background(0);
+            // Implement frame rate control and FPS calculation
+            const now = performance.now();
+            const elapsed = now - lastFrameTime;
+            const frameInterval = 1000 / TARGET_FRAMERATE;
             
-            if (isPlaying) {
-                currentTime = (millis() - startTime) / 1000.0;
+            // Update FPS calculation every FPS_UPDATE_INTERVAL
+            if (now - fpsUpdateTime >= FPS_UPDATE_INTERVAL) {
+                currentFPS = 1000 / elapsed;
+                fpsUpdateTime = now;
             }
-
-            if (mouseIsPressed && mouseButton === LEFT) {
-                if (previousMouseX !== undefined && previousMouseY !== undefined) {
-                    let deltaX = mouseX - previousMouseX;
-                    let deltaY = mouseY - previousMouseY;
-                    translateX -= deltaX;
-                    translateY += deltaY;
-                }
-                previousMouseX = mouseX;
-                previousMouseY = mouseY;
+            
+            // Skip frame if we're rendering too quickly
+            if (elapsed < frameInterval) {
+                return;
+            }
+            
+            // Update last frame time with adjustment to maintain consistent frame timing
+            lastFrameTime = now - (elapsed % frameInterval);
+            
+            clear();
+            background(0);  
+            
+            // Synchronized time handling
+            if (isP) {
+                // When playing, calculate time since start, accounting for any paused time
+                cuT = ((millis() - stT) / 1000.0);
             } else {
-                previousMouseX = undefined;
-                previousMouseY = undefined;
+                // When paused, stay exactly at the last paused time
+                cuT = lastPausedTime;
             }
 
-            let scaledTime = currentTime;
+            // Calculate shader-space coordinates without scale factor multiplication
+            const actualTX = tX;
+            const actualTY = tY;
 
-            theShader.setUniform('u_baseScale', baseScale);
-            theShader.setUniform('u_scaleFactor', scaleFactor);
-            theShader.setUniform('u_translation', [translateX, translateY]);
-            theShader.setUniform('u_resolution', [width, height]);
-            theShader.setUniform('u_time', scaledTime);
-            theShader.setUniform('u_cellSize', cellSize * baseScale);
-            theShader.setUniform('u_noiseScale', noiseScale);
-            theShader.setUniform('u_flowSpeed', flowSpeed);
-            theShader.setUniform('u_backgroundColor', [0.0, 0.0, 0.0, 1.0]);
-            theShader.setUniform('u_luminosity', luminosity);
-            theShader.setUniform('u_vibrancy', vibrancy);
+            // Set shader uniforms
+            tS.setUniform('u_bS', bS);
+            tS.setUniform('u_scaleFactor', scF);
+            tS.setUniform('u_translation', [actualTX, actualTY]);
+            tS.setUniform('u_resolution', [width, height]);
+            tS.setUniform('u_time', cuT);
+            tS.setUniform('u_cellSize', (height / cV) * bS);
+            tS.setUniform('u_flowSpeed', fS);
+            tS.setUniform('u_luminosity', lum);
+            tS.setUniform('u_vibrancy', vib);
+            tS.setUniform('u_sortStrength', soS);
+            tS.setUniform('u_sortFrequency', soF);
+            tS.setUniform('u_sortAnimSpeed', soA);
+            tS.setUniform('u_currentPattern', cuP);
+            
+            // Keep mouse influence disabled
+            tS.setUniform('u_mouseActive', false);
+            tS.setUniform('u_mouse', [0.0, 0.0]);
+            tS.setUniform('u_trailCount', 0);
+            
+            let cSP = height / cV;
+            let dySN = bN * (100.0 / floor(cSP)); 
+            tS.setUniform('u_noiseScale', dySN);
+            tS.setUniform('u_caScaleVariation', 0.5);
 
             beginShape();
             vertex(0, 0, 0, 0, 0);
@@ -1046,87 +1766,156 @@
             vertex(0, 2, 0, 0, 1);
             endShape(CLOSE);
 
-            if (showFPS) {
-                let fps = calculateFPS();
-                adjustPixelDensity(fps);
-                
-                let fpsDisplay = document.getElementById('fpsDisplay');
-                if (!fpsDisplay) {
-                    fpsDisplay = document.createElement('div');
-                    fpsDisplay.id = 'fpsDisplay';
-                    fpsDisplay.style.position = 'fixed';
-                    fpsDisplay.style.top = '10px';
-                    fpsDisplay.style.left = '10px';
-                    fpsDisplay.style.color = 'white';
-                    fpsDisplay.style.fontFamily = 'monospace';
-                    fpsDisplay.style.fontSize = '16px';
-                    fpsDisplay.style.zIndex = '1000';
-                    document.body.appendChild(fpsDisplay);
-                }
-                fpsDisplay.textContent = `FPS: ${fps} (PD: ${currentPixelDensity.toFixed(2)})`;
+            if (isR && (millis() - reST > reDu)) {
+                noRe();
             }
         }
 
-        function updateBaseScale() {
-            let rawScale = height / BASE_HEIGHT;
-            // Dampen scale changes when canvas is smaller than base height
-            if (rawScale < 1) {
-                // Make scaling even less aggressive by using 0.5 instead of 0.7
-                baseScale = 1 - ((1 - rawScale) * 0.5);  // Changed from 0.7 to 0.5
-            } else {
-                baseScale = rawScale;
-            }
-            return baseScale;
-        }
+        
 
-        function getScaledValue(baseValue) {
-            return baseValue * baseScale;
-        }
-
-        function updateCanvasSize() {
-            let newWidth, newHeight;
+        function upCS() {
+            const wiR = windowWidth / windowHeight;
+            let neW, neH;
             
-            switch(displayMode) {
-                case 0:
-                    resizeCanvas(windowWidth, windowHeight);
+            // Store current relative position before resize
+            let relX = (tX + width/2) / width;
+            let relY = (tY + height/2) / height;
+            
+            switch(dM) {
+                case 0: 
+                    neW = windowWidth;
+                    neH = windowHeight;
                     break;
                 
-                case 1:
-                    if (windowWidth < windowHeight) {
-                        newWidth = windowWidth;
-                        newHeight = windowWidth;
+                case 1: 
+                    if (wiR > 1) {
+                        neH = windowHeight;
+                        neW = windowHeight;
                     } else {
-                        newHeight = windowHeight;
-                        newWidth = windowHeight;
+                        neW = windowWidth;
+                        neH = windowWidth;
                     }
-                    resizeCanvas(newWidth, newHeight);
                     break;
                 
-                case 2:
-                    if (windowWidth / windowHeight > 2/3) {
-                        newHeight = windowHeight;
-                        newWidth = (windowHeight * 2) / 3;
+                case 2: 
+                    if (wiR > 3/4) {
+                        neH = windowHeight;
+                        neW = (windowHeight * 3) / 4;
                     } else {
-                        newWidth = windowWidth;
-                        newHeight = (windowWidth * 3) / 2;
+                        neW = windowWidth;
+                        neH = (windowWidth * 4) / 3;
                     }
-                    resizeCanvas(newWidth, newHeight);
+                    break;
+                
+                case 3: 
+                    if (wiR > 4/3) {
+                        neH = windowHeight;
+                        neW = (windowHeight * 4) / 3;
+                    } else {
+                        neW = windowWidth;
+                        neH = (windowWidth * 3) / 4;
+                    }
                     break;
             }
             
-            updateBaseScale();
-            updateTranslationForCenter();
-            
-            let canvas = document.querySelector('canvas');
-            canvas.style.position = 'absolute';
-            canvas.style.left = '50%';
-            canvas.style.top = '50%';
-            canvas.style.transform = 'translate(-50%, -50%)';
+            if (width !== neW || height !== neH) {
+                resizeCanvas(neW, neH);
+                
+                // Apply the relative position to the new dimensions
+                tX = -neW/2 + (relX * neW);
+                tY = -neH/2 + (relY * neH);
+                
+                canvasElement.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)';
+            }
         }
 
+        
+        let reTO;
         function windowResized() {
-            updateCanvasSize();
+            // Clear previous timeout to implement debouncing
+            if (reTO) clearTimeout(reTO);
+            
+            // Using requestAnimationFrame for smoother updates and less performance impact
+            // Debounce with setTimeout as a backup for consistent timing
+            reTO = setTimeout(() => {
+                // Use requestAnimationFrame to align with browser's render cycle
+                requestAnimationFrame(upCS);
+            }, 100);
         }
+
+        
+        let meR;
+        let reCN = [];
+        let isR = false;
+        let reST;
+        const reDu = 30000; 
+
+        // Add these new functions
+        function stRe() {
+            // Clear any previous recording chunks
+            reCN = [];
+            
+            // Get stream from canvas
+            const stream = canvasElement.captureStream(60); 
+            
+            // Create media recorder with high quality settings
+            meR = new MediaRecorder(stream, {
+                mimeType: 'video/webm;codecs=vp9',
+                videoBitsPerSecond: 50000000 
+            });
+
+            // Add event handlers
+            meR.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    reCN.push(e.data);
+                }
+            };
+
+            meR.onstop = saRe;
+
+            // Start recording
+            meR.start();
+            isR = true;
+            reST = millis();
+        }
+
+        function noRe() {
+            if (meR && meR.state !== 'inactive') {
+                meR.stop();
+            }
+            isR = false;
+        }
+
+        function saRe() {
+            if (!reCN.length) return;
+            
+            // Create blob from recording chunks
+            const blob = new Blob(reCN, {
+                type: 'video/webm'
+            });
+            
+            // Create download link
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const timestamp = geT();
+            
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `shader_recording_${timestamp}.webm`;
+            
+            // Trigger download
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                // Clear recording chunks to free memory
+                reCN = [];
+            }, 100);
+        }
+
     </script>
   </body>
 </html>
