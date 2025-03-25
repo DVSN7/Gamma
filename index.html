@@ -1390,6 +1390,74 @@
                 canvas.style.cursor = 'grab';
             });
             
+            // Add touch event handling for mobile devices
+            let touchStartX, touchStartY;
+            let touchStartTX, touchStartTY;
+            
+            canvas.addEventListener('touchstart', (e) => {
+                // Get the first touch point
+                const touch = e.touches[0];
+                
+                // Store initial touch position and translation
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                touchStartTX = tX;
+                touchStartTY = tY;
+                
+                // Set dragging state
+                isDragging = true;
+                canvas.style.cursor = 'grabbing';
+                
+                // Prevent default touch behavior to avoid scrolling
+                e.preventDefault();
+            }, { passive: false });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                if (isDragging) {
+                    // Get the first touch point
+                    const touch = e.touches[0];
+                    
+                    // Calculate the translation
+                    const dx = -(touch.clientX - touchStartX);
+                    const dy = (touch.clientY - touchStartY);
+                    
+                    // Apply the translation
+                    tX = touchStartTX + dx*8;
+                    tY = touchStartTY + dy*8;
+                    
+                    // Prevent default touch behavior
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            canvas.addEventListener('touchend', () => {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+            
+            canvas.addEventListener('touchcancel', () => {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+            
+            // Add double tap to toggle pause state
+            let lastTap = 0;
+            canvas.addEventListener('touchend', (e) => {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                
+                if (tapLength < 500 && tapLength > 0) {
+                    // Double tap detected
+                    isP = !isP;
+                    if (isP) {
+                        stT = millis() - (lastPausedTime * 1000);
+                    } else {
+                        lastPausedTime = cuT;
+                    }
+                }
+                lastTap = currentTime;
+            });
+            
             // Set initial cursor style
             canvas.style.cursor = 'grab';
             
