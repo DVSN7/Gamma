@@ -139,257 +139,140 @@
             return mod289((x * 34.0 + 1.0) * x); 
         }
 //////////////////////////////////////////////////////////////////////
-        mediump float simplexNoise(mediump vec2 v, float time) {
-            // Original simplex noise variables and setup
-            mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
-            
-            // Combine time addition into a single step
-            vec2 timeOffset = vec2(u_time * 0.03);
-            
-            // First, compute standard simplex noise
-            mediump vec2 vOrig = v;
-            v += timeOffset;
-            
-            // Integer calculations can use low precision
-            lowp vec2 i = floor(v + dot(v, C.yy));
-            mediump vec2 x0 = v - i + dot(i, C.xx);
-            
-            // These boolean operations and offsets can use low precision
-            lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-            
-            // Combined calculations to reduce register usage
-            mediump vec4 x12 = x0.xyxy + C.xxzz;
-            x12.xy -= i1;
-            
-            // Use existing mod289 function
-            i = mod289(i);
-            lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-            
-            // Dot products need medium precision
-            mediump vec3 dots = vec3(
-                dot(x0, x0),
-                dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
-                dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
-            );
-           
-            // These multiplications can use low precision
-            lowp vec3 m = max(0.5 - dots, 0.0);
-            m = m * m;
-            m = m * m;
-            
-            // These can use low precision
-            lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
-            lowp vec3 h = abs(x) - 0.5;
-            lowp vec3 ox = floor(x + 0.5);
-            lowp vec3 a0 = x - ox;
-            
-            // Final calculation
-            m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
-            
-            // Gradient calculation
-            lowp vec3 g = vec3(
-                a0.x * x0.x + h.x * x0.y,
-                a0.y * x12.x + h.y * x12.y,
-                a0.z * x12.z + h.z * x12.w
-            );
-            
-            // Base simplex noise value
-            float noise = 130.0 * dot(m, g);
-            
-            // Now apply reaction-diffusion style transformations with smoother transitions
-            
-            // Use a more consistent time factor that won't cause sudden jumps
-            vec2 uv = vOrig * 0.06;
-            // Wrap time to prevent large values causing precision issues
-            float wrappedTime = mod(u_time, 10000.0);
-            float t = wrappedTime * 0.02;
-            
-            // Use smoothed mod/floor for cell transitions to avoid hard edges
-            vec2 cellPos = uv * 8.0;
-            vec2 cellFract = fract(cellPos);
-            // Apply smoothing at cell boundaries
-            vec2 cellWeight = smoothstep(0.0, 0.1, cellFract) * smoothstep(1.0, 0.9, cellFract);
-            vec2 cellCoord = floor(cellPos);
-            
-            // Generate cell pattern with smoother transitions across time
-            float cellNoise = fract(sin(dot(cellCoord, vec2(12.9898, 78.233))) * 43758.5453);
-            // Use a very slow time factor for stable cell evolution
-            float cellTime = t * 0.05;
-            float cellPattern = mix(
-                cellNoise,
-                fract(sin(dot(cellCoord + 1.0, vec2(12.9898, 78.233))) * 43758.5453),
-                smoothstep(0.0, 1.0, sin(cellTime) * 0.5 + 0.5)
-            );
-            
-            // Create continuous pattern transition with no hard edges
-            float patternMod = cellPattern * 2.0 - 1.0;
-            
-            // Smooth coordinate wrapping to prevent jumps at boundaries
-            vec2 phase = fract(uv * 2.5);
-            vec2 wrappedPos = phase - 0.5;
-            float dist = length(wrappedPos);
-            
-            // Create slow organic wave patterns
-            float waveSpeed = t * 0.3;
-            // Use higher harmonics with lower amplitudes for smoother motion
-            float wavePattern = (
-                sin(uv.x * 2.0 + waveSpeed) * cos(uv.y * 1.5 + waveSpeed * 0.7) * 0.15 +
-                sin(uv.x * 4.0 + waveSpeed * 0.5) * cos(uv.y * 3.0 + waveSpeed * 0.4) * 0.1
-            );
-            
-            // Create smooth cell boundaries with extra filtering
-            float rawDist = fract(dist * 3.0);
-            // Apply double smoothstep for extra-smooth edges
-            float cellEdge = smoothstep(0.3, 0.7, rawDist) * (1.0 - smoothstep(0.7, 0.9, rawDist)) * 0.25;
-            
-            // Ensure thresholds change very gradually
-            float thresholdTime = t * 0.1;
-            float threshold = 0.4 + 0.1 * sin(thresholdTime);
-            // Wide transition band and extra smoothing for threshold effects
-            float reactionEffect = smoothstep(threshold - 0.3, threshold + 0.3, abs(noise)) * 0.2;
-            
-            // Create continuous rotational flow without angle discontinuities
-            float flowTime = t * 0.08;
-            // Avoid using raw atan which can create discontinuities at angle wrap points
-            // Instead use separate sin/cos patterns that continuously wrap
-            float flowX = sin(wrappedPos.x * 3.0 + flowTime) * 0.15;
-            float flowY = cos(wrappedPos.y * 3.0 + flowTime * 1.1) * 0.15;
-            float flow = (flowX + flowY) * patternMod * 0.5;
-            
-            // Smooth activator-inhibitor interaction
-            float activator = noise * 0.5 + 0.5;
-            float inhibitor = 1.0 - activator;
-            float interaction = (activator * inhibitor * 3.0) * 0.15;
-            
-            // Create patterns that morph without discontinuities
-            float morphSpeed = t * 0.15;
-            float morphPattern = (
-                sin(dist * 5.0 + morphSpeed) * 0.1 +
-                cos(dist * 8.0 - morphSpeed * 0.7) * 0.08
-            );
-            
-            // Gradual component blending to avoid spikes
-            float rdComponent = wavePattern + cellEdge + reactionEffect + flow + interaction + morphPattern;
-            
-            // Use consistently smooth blend factor with limited range
-            float blendSpeed = t * 0.04;
-            float blendFactor = 0.45 + 0.1 * sin(blendSpeed);
-            
-            // Apply a temporal filter to smooth between frames
-            // Store previous frame contribution in the current result
-            noise = mix(noise, rdComponent, blendFactor);
-            
-            // Apply very gentle feedback with limited amplitude
-            noise += 0.08 * sin(noise * 2.5);
-            
-            // Apply a safety clamp with smooth falloff to prevent edge cases
-            float safeNoise = noise * 0.85;
-            
-            return safeNoise;
-        }
+mediump float simplexNoise(mediump vec2 v, float time) {
+    const mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+    
+    // Combine time addition into a single step
+    v += time * 0.03;
+    
+    // Integer calculations can use low precision
+    lowp vec2 i = floor(v + dot(v, C.yy));
+    mediump vec2 x0 = v - i + dot(i, C.xx);
+    
+    // These boolean operations and offsets can use low precision
+    lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    
+    // Combined calculations to reduce register usage
+    mediump vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    
+    // Use existing mod289 function
+    i = mod289(i);
+    lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    
+    // Dot products need medium precision
+    mediump vec3 dots = vec3(
+        dot(x0, x0),
+        dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
+        dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
+    );
+    
+    // These multiplications can use low precision
+    lowp vec3 m = max(0.5 - dots, 0.0);
+    m = m * m;
+    m = m * m;
+    
+    // These can use low precision
+    lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    lowp vec3 h = abs(x) - 0.5;
+    lowp vec3 ox = floor(x + 0.5);
+    lowp vec3 a0 = x - ox;
+    
+    // Final calculation
+    m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
+    
+    // Gradient calculation
+    lowp vec3 g = vec3(
+        a0.x * x0.x + h.x * x0.y,
+        a0.y * x12.x + h.y * x12.y,
+        a0.z * x12.z + h.z * x12.w
+    );
+    
+    return 130.0 * dot(m, g);
+}
 
-        /////////////////////////////////////////////////////////////
+lowp float fastSin(float x) {
+    // Wrap to -PI to PI range
+    x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
+    
+    // Fast sine approximation
+    // Error < 0.002
+    float x2 = x * x;
+    return x * (1.0 - x2 / (3.0 * 2.0) + x2 * x2 / (5.0 * 4.0 * 3.0 * 2.0));
+}
 
-        lowp float fastSin(float x) {
-            // Wrap to -PI to PI range
-            x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
-            
-            // Fast sine approximation
-            // Error < 0.002
-            float x2 = x * x;
-            return x * (1.0 - x2 / (3.0 * 2.0) + x2 * x2 / (5.0 * 4.0 * 3.0 * 2.0));
-        }
+lowp float fastCos(float x) {
+    return fastSin(x + M_PI * 0.5);
+}
 
-        lowp float fastCos(float x) {
-            return fastSin(x + M_PI * 0.5);
-        }
+vec2 domainWarp(vec2 p, float time) {
+    float slowTime = time * 0.0001;
+    
+    float flow = simplexNoise(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
+    float detail = simplexNoise(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
+    
+    // Use fast approximations
+    float angle = slowTime * 0.1;
+    float rotX = fastCos(angle) * flow;
+    float rotY = fastSin(angle) * flow;
+    
+    return p + vec2(
+        rotX * 1.5 + detail,
+        rotY * 1.5 + detail
+    );
+}
 
-        // Add fast hyperbolic tangent approximation
-        lowp float fastTanh(float x) {
-            // Fast approximation of tanh
-            // Using the formula: tanh(x) ≈ x / (1 + |x|)
-            float absX = abs(x);
-            float signX = x < 0.0 ? -1.0 : 1.0;
-            return signX * absX / (1.0 + absX);
-        }
+float layeredNoise(vec2 p, float time) {
+    // Simplified to single layer with detail
+    float mainLayer = simplexNoise(p, time);
+    float detail = simplexNoise(p * 2.0, time * 0.3) * 0.3;
+    return mainLayer * 0.7 + detail * 0.3;
+}
 
-
-
-        
-//////////////////////////////////////////////////
-
-
-
-        
-
-        vec2 domainWarp(vec2 p, float time) {
-            float slowTime = u_time * 0.0001;
-            
-            float flow = simplexNoise(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
-            float detail = simplexNoise(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
-            
-            // Use fast approximations
-            float angle = slowTime * 0.1;
-            float rotX = fastCos(angle) * flow;
-            float rotY = fastSin(angle) * flow;
-            
-            return p + vec2(
-                rotX * 1.5 + detail,
-                rotY * 1.5 + detail
-            );
-        }
-
-        float layeredNoise(vec2 p, float time) {
-            // Simplified to single layer with detail
-            float mainLayer = simplexNoise(p, time);
-            float detail = simplexNoise(p * 2.0, time * 0.3) * 0.3;
-            return mainLayer * 0.7 + detail * 0.3;
-        }
-
-        float fbmSimplexNoise(vec2 v, int octaves) {
-            if (octaves <= 0) return 0.0;
-            
-            const float PERSISTENCE = 0.001;
-            const float LACUNARITY = 0.0009;
-            const int MAX_OCTAVES = 2;
-            
-            float total = 0.0;
-            float amplitude = u_amplitude;
-            float frequency = u_initialFreq;
-            
-            // Apply initial offsets
-            v += u_nOS + vec2(u_nS);
-            
-            // Calculate base pattern with simplified domain warping
-            vec2 warpedCoord = domainWarp(v, u_time * 0.1);
-            float basePattern = layeredNoise(warpedCoord, u_time);
-            total = amplitude * basePattern;
-            
-            // Simplified time influence - single noise sample
-            float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
-            
-            // Only two octaves with simplified rotation
-            float timeRotation = u_time * 0.05;
-            // Precalculate sin/cos using fast approximations
-            float sinRot = fastSin(timeRotation);
-            float cosRot = fastCos(timeRotation);
-            mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
-            
-            // First octave
-            amplitude *= PERSISTENCE * 3.2;
-            frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-            total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
-            
-            // Second octave (if needed)
-            if (octaves > 1) {
-                amplitude *= PERSISTENCE * 2.0;
-                frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-                total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
-            }
-            
-            // Apply final modulation
-            return total * (timeInfluence * 0.9 + u_baseModulation);
-        }
+float fbmSimplexNoise(vec2 v, int octaves) {
+    if (octaves <= 0) return 0.0;
+    
+    const float PERSISTENCE = 0.001;
+    const float LACUNARITY = 0.0009;
+    const int MAX_OCTAVES = 2;
+    
+    float total = 0.0;
+    float amplitude = u_amplitude;
+    float frequency = u_initialFreq;
+    
+    // Apply initial offsets
+    v += u_nOS + vec2(u_nS);
+    
+    // Calculate base pattern with simplified domain warping
+    vec2 warpedCoord = domainWarp(v, u_time * 0.1);
+    float basePattern = layeredNoise(warpedCoord, u_time);
+    total = amplitude * basePattern;
+    
+    // Simplified time influence - single noise sample
+    float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
+    
+    // Only two octaves with simplified rotation
+    float timeRotation = u_time * 0.05;
+    // Precalculate sin/cos using fast approximations
+    float sinRot = fastSin(timeRotation);
+    float cosRot = fastCos(timeRotation);
+    mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
+    
+    // First octave
+    amplitude *= PERSISTENCE * 3.2;
+    frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+    total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
+    
+    // Second octave (if needed)
+    if (octaves > 1) {
+        amplitude *= PERSISTENCE * 2.0;
+        frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+        total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
+    }
+    
+    // Apply final modulation
+    return total * (timeInfluence * 0.9 + u_baseModulation);
+}
 
 
         lowp vec3 getColorFromPalette(float t) {
@@ -441,46 +324,32 @@
                 return vec3(finalLuminance);
             } else {
                 // Adjust enhancement based on muted colors setting
-                float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04);
-                if (u_useMutedColors) {
-                    noiseInfluence *= 0.5; // Reduce noise influence for muted colors
-                }
-                
+                float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04); // lower influence
                 vec3 boosted = color * (1.0 + (1.0 - luminance) * noiseInfluence);
                 
-                float saturationStrength;
-                if (u_useMutedColors) {
-                    saturationStrength = u_isLightBackground ? 0.85 : 0.9; // Lower saturation for muted colors
-                } else {
-                    saturationStrength = u_isLightBackground ? 1.1 : 1.2; // Original saturation for vivid colors
-                }
+                // Adjust saturation based on background
+                //float saturationStrength = u_isLightBackground ? 1.5 : 2.0;  //1.1 : 1.2
+                float saturationStrength = u_isLightBackground ? 1.1 : 1.2; // lower influence
+                vec3 saturated = mix(
+                    vec3(luminance),
+                    boosted,
+                    vec3(saturationStrength)
+                );
                 
-                vec3 saturated = mix(vec3(luminance), boosted, vec3(saturationStrength));
-                
-                float contrastPower;
-                if (u_useMutedColors) {
-                    contrastPower = u_isLightBackground ? 0.97 : 0.95; // Less contrast for muted colors
-                } else {
-                    contrastPower = u_isLightBackground ? 0.95 : 0.92; // Original contrast for vivid colors
-                }
-                
-                vec3 contrasted = pow(saturated, vec3(contrastPower));
-                
-                float highlightThreshold;
-                if (u_useMutedColors) {
-                    highlightThreshold = u_isLightBackground ? 0.97 : 0.95; // Higher threshold for muted colors
-                } else {
-                    highlightThreshold = u_isLightBackground ? 0.95 : 0.92; // Original threshold for vivid colors
-                }
-                
-                vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
-                contrasted = mix(contrasted, highlights * 0.9, u_useMutedColors ? 0.4 : 0.6);
-                
-                float finalMultiplier = u_useMutedColors ? 
-                    (u_isLightBackground ? 0.9 : 0.95) :  // Lower multiplier for muted colors
-                    (u_isLightBackground ? 0.95 : 1.05);  // Original multiplier for vivid colors
-                    
-                return contrasted * finalMultiplier;
+                 float contrastPower = u_isLightBackground ? 0.95 : 0.92; // lower influence
+            vec3 contrasted = pow(saturated, vec3(contrastPower));
+            
+            //float highlightThreshold = u_isLightBackground ? 0.9 : 0.85;  //0.9 : 0.85
+            float highlightThreshold = u_isLightBackground ? 0.95 : 0.92; // lower influence
+            vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
+            //contrasted = mix(contrasted, highlights * 0.8, 0.2); // 0.8, 0.2
+            //contrasted = mix(contrasted, highlights * 0.9, 0.1); // lower influence
+            contrasted = mix(contrasted, highlights * 0.9, 0.6); // higer influence
+
+            // Final multiplier based on background
+            //float finalMultiplier = u_isLightBackground ? 0.9 : 1.1;  //0.9 : 1.1
+            float finalMultiplier = u_isLightBackground ? 0.95 : 1.05; // lower influence
+            return contrasted * finalMultiplier;
             }
         }
         //VAR WITHOUT ENHANCEMENT////////////////////////////////
@@ -504,94 +373,57 @@
         }
 
         lowp vec2 getFlowDirection(mediump vec2 position, float time) {
-            lowp float slowTime = u_time * u_sortAnimSpeed * 0.05;
+            lowp float slowTime = time * u_sortAnimSpeed * 0.05;
             
-            // Create cellular grid
-            float cellSize = 200.0;
-            vec2 cellCoord = floor(position / cellSize);
+            // Create fractal Brownian motion with domain warping
+            vec2 p = position * 0.01;
             
-            // Generate stable random state for each cell
-            float cellState = fract(sin(dot(cellCoord, vec2(12.9898, 78.233))) * 43758.5453);
+            // Initial domain warping
+            vec2 warp1 = vec2(
+                simplexNoise(p, slowTime),
+                simplexNoise(p + vec2(5.2, 1.3), slowTime)
+            ) * 2.0;
             
-            // Create state transitions based on neighbors
-            float topState = fract(sin(dot(cellCoord + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float rightState = fract(sin(dot(cellCoord + vec2(1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float bottomState = fract(sin(dot(cellCoord + vec2(0.0, -1.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float leftState = fract(sin(dot(cellCoord + vec2(-1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+            // Secondary domain warping
+            vec2 warp2 = vec2(
+                simplexNoise(p + warp1, slowTime + 10.0),
+                simplexNoise(p + warp1 + vec2(8.7, 2.3), slowTime + 20.0)
+            ) * 1.5;
             
-            // Create time-varying state
-            float timeState = step(0.5, sin(cellState * 10.0 + slowTime));
+            // Final domain-warped position
+            vec2 warped = p + warp1 + warp2;
             
-            // Generate flow based on neighbor states and rules
-            vec2 flow = vec2(
-                (rightState - leftState) * cos(slowTime + cellState * 10.0),
-                (topState - bottomState) * sin(slowTime + cellState * 10.0)
-            );
+            // Multi-octave flow field
+            vec2 flow = vec2(0.0);
+            float amplitude = 1.0;
+            float frequency = 1.0;
             
-            // Add local vorticity based on cell state
-            vec2 localPos = fract(position / cellSize) - 0.5;
-            vec2 vortex = vec2(-localPos.y, localPos.x) * timeState;
-            
-            // Mouse influence section
-            if (u_mouseActive) {
-                // Calculate distance to mouse
-                float mouseDistance = length(position - u_mouse);
-                float mouseInfluenceRadius = u_mouseInfluenceRadius * u_cellSize;
-                float mouseFactor = 0.0;
+            // Add multiple octaves with rotation
+            for(int i = 0; i < 4; i++) {
+                // Calculate noise gradient for this octave
+                float noiseVal = simplexNoise(warped * frequency, slowTime * frequency * 0.2);
+                float noiseX = simplexNoise(warped * frequency + vec2(0.01, 0.0), slowTime * frequency * 0.2);
+                float noiseY = simplexNoise(warped * frequency + vec2(0.0, 0.01), slowTime * frequency * 0.2);
                 
-                // Calculate influence factor with smooth falloff
-                if (mouseDistance < mouseInfluenceRadius) {
-                    float normalizedDist = mouseDistance / mouseInfluenceRadius;
-                    mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist));
-                    
-                    // Calculate direction vector for push effect
-                    vec2 mouseDirection = normalize(position - u_mouse);
-                    
-                    // Apply mouse influence to the flow with smooth transition
-                    flow = mix(flow, mouseDirection * 1.2, mouseFactor * 0.5 * u_mouseInfluenceRadius / 10.0);
-                    
-                    // Adjust vorticity near the mouse with smooth transition
-                    vortex *= 1.0 + mouseFactor * 1.5 * u_mouseInfluenceRadius / 10.0;
-                }
+                // Approximate gradient
+                vec2 noiseGrad = vec2(noiseX - noiseVal, noiseY - noiseVal) * 100.0;
                 
-                // Trail influence - more efficient processing
-                for (int i = 0; i < 20; i++) {
-                    if (i >= u_trailCount) break;
-                    
-                    // Get trail position and calculate distance
-                    vec2 trailPos = u_trailPositions[i];
-                    float trailAge = u_trailTimes[i];
-                    
-                    // Skip too old points
-                    if (trailAge >= 3.0) continue;
-                    
-                    // Calculate trail radius with age falloff
-                    float trailRadius = mouseInfluenceRadius * 0.7 * (1.0 - trailAge / 3.0);
-                    float trailDistance = length(position - trailPos);
-                    
-                    // Only process points within radius
-                    if (trailDistance < trailRadius) {
-                        float normalizedDist = trailDistance / trailRadius;
-                        float trailFactor = (1.0 - trailAge / 3.0) * 
-                                           (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist));
-                        
-                        // Reduce strength with squared falloff and smooth transition
-                        trailFactor = trailFactor * trailFactor * 0.3 * u_mouseInfluenceRadius / 10.0;
-                        
-                        // Skip negligible influences 
-                        if (trailFactor > 0.01) {
-                            // Direction from position to trail point
-                            vec2 trailDirection = normalize(position - trailPos);
-                            
-                            // Blend influence with current flow
-                            flow = mix(flow, trailDirection, trailFactor);
-                        }
-                    }
-                }
+                // Rotate gradient based on octave
+                float octaveAngle = float(i) * 0.7 + slowTime * 0.1;
+                vec2 rotatedGrad = vec2(
+                    noiseGrad.x * cos(octaveAngle) - noiseGrad.y * sin(octaveAngle),
+                    noiseGrad.x * sin(octaveAngle) + noiseGrad.y * cos(octaveAngle)
+                );
+                
+                // Add to flow with amplitude scaling
+                flow += rotatedGrad * amplitude;
+                
+                // Update for next octave
+                frequency *= 2.0;
+                amplitude *= 0.5;
             }
             
-            // Combine and normalize the final flow direction
-            return normalize(flow + vortex);
+            return normalize(flow);
         }
 
         // Add this function before getGlyphPattern
@@ -602,17 +434,17 @@
             
             // Return vec4(dirBiasStrength, surviveThreshold, birthThreshold, edgeThreshold)
             if (patternType == 0) {
-                // Organic, flowing patterns
-                return vec4(0.4, 1.3, 2.3, 0.35);
+                // Organic, flowing patterns - more defined
+                return vec4(0.3, 1.5, 2.5, 0.4);
             } else if (patternType == 1) {
-                // Geometric, crystalline patterns
-                return vec4(0.15, 1.6, 2.7, 0.5);
+                // Geometric, crystalline patterns - stronger edges
+                return vec4(0.2, 1.8, 2.8, 0.6);
             } else if (patternType == 2) {
-                // Chaotic, detailed patterns
-                return vec4(0.3, 1.7, 2.2, 0.45);
+                // Chaotic, detailed patterns - more structured
+                return vec4(0.25, 1.6, 2.4, 0.5);
             } else {
-                // Symmetric patterns
-                return vec4(0.25, 1.5, 2.5, 0.4);
+                // Symmetric patterns - more balanced
+                return vec4(0.15, 1.7, 2.6, 0.55);
             }
         }
 
@@ -622,11 +454,11 @@
             float gridValue = max(abs(gridPos.x), abs(gridPos.y)) * 0.25;
             float smoothGrid = smoothstep(0.0, 4.0, gridValue) * 0.5;
             
-            // Use more stable noise calculation
-            float stabilityNoise = noise(floor(cell / 8.0) * 8.0, seed) * 0.3;
-            float scaleVariation = 1.0 + (smoothGrid * 0.4 + stabilityNoise) * u_caScaleVariation * 0.5;
+            // More stable noise calculation with reduced variation
+            float stabilityNoise = noise(floor(cell / 8.0) * 8.0, seed) * 0.2; // Reduced from 0.3
+            float scaleVariation = 1.0 + (smoothGrid * 0.3 + stabilityNoise) * u_caScaleVariation * 0.5;
             
-            // Mouse influence calculation
+            // Mouse influence calculation - reduced influence
             if (u_mouseActive) {
                 vec2 approxWorldPos = cell * u_cellSize * 0.5;
                 float mouseDistance = length(approxWorldPos - u_mouse);
@@ -634,22 +466,22 @@
                 
                 if (mouseDistance < mouseInfluenceRadius) {
                     float normalizedDist = mouseDistance / mouseInfluenceRadius;
-                    float mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist)) * 0.3;
-                    scaleVariation += mouseFactor * 0.2 * u_mouseInfluenceRadius / 10.0;
+                    float mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist)) * 0.2; // Reduced from 0.3
+                    scaleVariation += mouseFactor * 0.15 * u_mouseInfluenceRadius / 10.0; // Reduced from 0.2
                 }
             }
             
-            // Pre-calculate scaled cell position
-            vec2 scaledCell = floor(cell * scaleVariation * 2.0) * 0.5;
+            // Pre-calculate scaled cell position with reduced variation
+            vec2 scaledCell = floor(cell * scaleVariation * 1.8) * 0.5; // Reduced from 2.0
             vec2 id = floor(scaledCell * 2.0);
             
-            // Generate base pattern
+            // Generate base pattern with more defined edges
             float basePattern = noise(floor(id * 0.5) * 2.0, seed + floor(depth));
-            float state = step(0.5, basePattern);
+            float state = step(0.6, basePattern); // Increased threshold for more defined edges
             
-            // Geometric properties
+            // Geometric properties with reduced variation
             float angle = atan(scaledCell.y, scaledCell.x);
-            float radius = length(scaledCell) * 2.0;
+            float radius = length(scaledCell) * 1.8; // Reduced from 2.0
             
             // Get CA settings
             vec4 caSettings = getCASettings(seed, floor(depth));
@@ -658,7 +490,7 @@
             // CA simulation with fixed neighbors
             float neighbors = 0.0;
             
-            // Calculate neighbors using individual offsets
+            // Calculate neighbors using individual offsets with reduced influence
             vec2 neighbor;
             float neighborState;
             
@@ -698,18 +530,22 @@
             
             // Geometric pattern
             float geoPattern = smoothstep(0.4, 0.6, 
-                sin(floor(radius * (2.0 + depth * 0.5)) + 
-                    floor(angle * (4.0 + depth * 0.3)) + 
-                    floor(depth) + seed) * 0.5 + 0.5
+                sin(radius * (3.0 + depth * 0.5) +    // Try 2.0 to 5.0
+                    angle * (4.0 + depth * 0.3) +     // Try 3.0 to 6.0
+                    depth + seed) * 0.5 + 0.5
             );
             
-            // Pattern blending
-            float blendFactor = 0.5 + 0.1 * sin(floor(depth) * 1.5);
+            // Blend CA result with geometric pattern based on depth
+            float blendFactor = 0.3 + 0.2 * sin(depth * 1.5);  // Try different base values 0.2 to 0.6
             float finalPattern = mix(state, geoPattern, blendFactor);
             
-            // Detail noise
-            float detail = noise(floor(scaledCell * (depth + 1.0) * 2.0) * 0.5, seed + floor(depth));
-            return mix(finalPattern, detail, 0.1);
+            // Add detail noise if enabled
+            if (u_enableGlyphNoiseDetail) {
+                float detail = noise(scaledCell * (depth + 1.0) * 3.0, seed + depth);
+                return mix(finalPattern, detail, 0.15);
+            }
+            
+            return finalPattern;
         }
 
         // Add HSL conversion functions before main()
@@ -786,7 +622,7 @@
             // Pattern vectors can use low precision since normalized
             lowp vec2 expPattern, stepPattern, circularPattern, squarePattern, flowPattern, smoothFlowPattern;
             
-            // Pattern 1: Exponential waves
+            // Pattern 1: Exponential waves - simplified for clearer forms
             expPattern = vec2(
                 exp(-abs(mod(distortNoise1 + gridDistortTime, 2.0) - 1.0)) - 0.5,
                 exp(-abs(mod(distortNoise2 + gridDistortTime, 2.0) - 1.0)) - 0.5
@@ -831,9 +667,9 @@
             // Add progressive movement (modified for more organic flow)
             float flowTime = gridDistortTime * 0.05;
             smoothFlowPattern += vec2(
-                simplexNoise(vec2(flowTime * 0.7, 0.0), 0.0) * 0.15,
-                simplexNoise(vec2(flowTime * 0.8, 1.0), 0.0) * 0.15
-            );
+                simplexNoise(vec2(flowTime * 0.7, 0.0), u_nS),
+                simplexNoise(vec2(flowTime * 0.8, 1.0), u_nS)
+            ) * 0.15;
             
             // Select pattern based on uniform
             vec2 finalPattern;
@@ -857,7 +693,7 @@
                 finalPattern = squarePattern;
             }
             
-            // Replace the conditional check with random selection for grid distortion
+            // Apply grid distortion with randomized strength
             mediump vec2 gridOffset = vec2(0.0);
             
             // Generate a pseudorandom value for this specific position and time
@@ -1017,16 +853,24 @@
                 // Break condition at the top to avoid unnecessary loop iterations
                 if (depth >= dynamicDepth) break;
                 
+                // Early exit if we've achieved sufficient opacity
+                if (color.a > 0.98) break;
+                
                 depthNoiseValue = noise(animatedCoord * float(depth + 1), u_nS);
                 depthFactor = float(depth) / float(MAX_LOOP_DEPTH);
                 
-                // Skip early if noise threshold not met
-                if (depthNoiseValue <= threshold) {
-                    continue;
-                }
+                // Skip early if noise threshold not met with a wider margin
+                if (depthNoiseValue <= threshold - 0.1) continue;
                 
-                // Get glyph parameters
+                // Skip processing for areas with minimal contribution
+                if (depthFactor > 0.9 && depthNoiseValue < threshold + 0.1) continue;
+                
+                // Get glyph parameters with distance-based detail reduction
                 float currentSize = mix(0.3, 1.2, depthFactor) * u_cellSize;
+                float distanceFromCenter = length(localPos);
+                
+                // Skip distant or small glyphs
+                if (distanceFromCenter > currentSize * 3.0) continue;
                 
                 // Rotate point to align with flow
                 vec2 rotatedP = vec2(
@@ -1034,15 +878,20 @@
                     localPos.x * fastSin(-flowAngle) + localPos.y * fastCos(-flowAngle)
                 );
                 
-                // Glyph grid calculation
-                // Map flow influence to offset range
-                float flowStrength = length(flowDir);  // Get magnitude of flow vector
-                float mappedOffset = mix(0.5, 1.2, flowStrength);  // Map to desired range
+                // Glyph grid calculation with optimized flow influence
+                float flowStrength = length(flowDir);
+                float mappedOffset = mix(0.5, 1.2, flowStrength);
                 vec2 glyphCell = floor(rotatedP / currentSize + mappedOffset);
                 vec2 localGlyphPos = rotatedP - glyphCell * currentSize;
                 
-                // Get glyph pattern
-                float glyphNoise = getGlyphPattern(glyphCell, float(depth), u_nS, vTexCoord);
+                // Get glyph pattern with distance-based detail reduction
+                float glyphNoise;
+                if (distanceFromCenter > currentSize * 2.0) {
+                    // Use simpler pattern for distant glyphs
+                    glyphNoise = step(0.5, noise(floor(glyphCell * 0.5) * 2.0, u_nS));
+                } else {
+                    glyphNoise = getGlyphPattern(glyphCell, float(depth), u_nS, vTexCoord);
+                }
                 
                 // Simplified glyph checks
                 bool centerActive = abs(glyphCell.x) < 0.5 && abs(glyphCell.y) < 0.5;
@@ -1052,17 +901,15 @@
                 bool insideGlyph = centerActive || noiseActive || lineActive;
                 
                 // Skip if not inside glyph
-                if (!insideGlyph) {
-                    continue;
-                }
+                if (!insideGlyph) continue;
                 
-                // Color calculation
+                // Color calculation with optimized blending
                 colorT = smoothstep(edge0, edge1, depthFactor + combinedNoise * 0.9);
                 
                 color1 = getColorFromPalette(colorT);
                 color2 = getColorFromPalette(1.0 - colorT);
                 
-                // Apply depth boost
+                // Apply depth boost with reduced calculations
                 float depthBoost = 1.2 + (1.0 - depthFactor) * 0.8;
                 color1 *= depthBoost;
                 color2 *= depthBoost;
@@ -1072,9 +919,12 @@
                 
                 blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
                 
-                // Add to final color with alpha blending
-                color.rgb *= 1.0;
-                color += vec4(blendedColor, 1.0) * (1.0 - depthNoiseValue * 0.7);
+                // Add to final color with optimized alpha blending
+                float alphaFactor = 1.0 - depthNoiseValue * 0.7;
+                if (alphaFactor > 0.01) { // Skip negligible contributions
+                    color.rgb *= 1.0;
+                    color += vec4(blendedColor, 1.0) * alphaFactor;
+                }
             }
             
             // Final color check
@@ -1089,17 +939,6 @@
                 
                 // Create a larger circle with 10 cell size diameter
                 float circleRadius = u_cellSize * 10.0; // Increased to 10 cells
-                
-                // Note: We're keeping the mouse position active for the flow field and glyph effects
-                // but removing the color blending effects for the cursor itself
-                
-                // Process trail points
-                for (int i = 0; i < 20; i++) { // Use constant 20 since GLSL doesn't support variable loop limits well
-                    if (i >= u_trailCount) break; // Skip if we've processed all actual trail points
-                    
-                    // Get trail position - needed for flow field interactions
-                    // But we're not applying any color effects
-                }
             }
             
             gl_FragColor = color;
@@ -1132,7 +971,7 @@
         let rSS;
         let roA;
         let nOX, nOY;
-        let scF = 30;
+        let scF = 25;
         let tX = 0, tY = 0;
         let iTX = 0, iTY = 0;
         let pMX, pMY;
@@ -1333,10 +1172,10 @@
                             }
                         } else if (tapCount === 3) {
                             // Triple tap - toggle scale factor (control D)
-                            if (scF === 30) {
-                                scF = 15;
+                            if (scF === 25) {
+                                scF = 12;
                             } else {
-                                scF = 30;
+                                scF = 25;
                             }
                             upTC();
                             tapCount = 0; // Reset tap count after triple tap
@@ -1423,10 +1262,10 @@
                          
                     case 'd':
                         
-                        if (scF === 30) {
-                            scF = 15;
+                        if (scF === 25) {
+                            scF = 12;
                         } else {
-                            scF = 30;
+                            scF = 25;
                         }
                         upTC();
                         break;
@@ -1667,7 +1506,7 @@
             tS.setUniform('u_trailTimes', new Array(MAX_TRAIL_POINTS).fill(TRAIL_LIFETIME / 1000.0));
             tS.setUniform('u_trailCount', 0);
 
-            scF = 30;
+            scF = 25;
             upTC();
             suEH();
 
