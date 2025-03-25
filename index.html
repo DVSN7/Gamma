@@ -315,154 +315,7 @@
 
 
 
-        mediump float simplexNoise2(mediump vec2 v, float time) {
-            // Wrap time to prevent precision issues with large values
-            float wrappedTime = mod(u_time, 10000.0);
-            float t = wrappedTime * 0.01; // Slower time factor for more fluid movement
-            
-            // Use more organic, continuous movement
-            vec2 flowOffset = vec2(
-                sin(t * 0.13) * cos(t * 0.07) * 0.15,
-                cos(t * 0.11) * sin(t * 0.09) * 0.15
-            );
-            
-            // Add secondary flow components for more organic motion
-            flowOffset += vec2(
-                sin(t * 0.05 + v.x * 0.1) * 0.1,
-                cos(t * 0.04 + v.y * 0.1) * 0.1
-            );
-            
-            // Apply domain warping for more fluid movement
-            mediump vec2 p = v * 0.15;
-            
-            // Add position-dependent flow for more natural distortion
-            p += flowOffset;
-            
-            // Gradually changing scale creates breathing effect
-            float scaleVariation = 1.0 + sin(t * 0.03) * 0.15;
-            float scale = 1.0 * scaleVariation;
-            vec2 tilePos = p * scale;
-            
-            // Get tile coordinates
-            vec2 cell = floor(tilePos);
-            vec2 fractPos = fract(tilePos);
-            
-            // Get deterministic random value for this cell
-            float cellId = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
-            
-            // Create temporal evolution for each cell
-            float cellTime = t * 0.1;
-            float cellPhase = sin(cellTime + cellId * 10.0) * 0.5 + 0.5;
-            
-            // Smooth tile rotation over time (less oscillatory)
-            float baseRotation = floor(cellId * 4.0) * 0.5 * 3.14159;
-            float rotationOffset = sin(t * 0.02 + cellId * 5.0) * 0.15; // Subtle rotation modulation
-            float rotation = baseRotation + rotationOffset;
-            
-            // Rotate the position within the cell
-            vec2 center = fractPos - 0.5;
-            float s = sin(rotation);
-            float c = cos(rotation);
-            vec2 rotatedPos = vec2(
-                center.x * c - center.y * s,
-                center.x * s + center.y * c
-            ) + 0.5;
-            
-            // Smooth morphing between pattern variations
-            float patternMorph = smoothstep(0.0, 1.0, sin(t * 0.01 + cellId * 3.0) * 0.5 + 0.5);
-            
-            // Arc thickness varies subtly with time for organic pulsing
-            float arcWidth = 0.1 + sin(t * 0.04 + cellId * 6.0) * 0.02;
-            float arcThick = 0.5 + arcWidth;
-            float arcThin = 0.5 - arcWidth;
-            
-            // Truchet basic pattern is made of quarter circles in opposite corners
-            float arcPattern;
-            
-            // Create smooth transitions between tile types
-            float tileTransition = smoothstep(0.45, 0.55, cellId + sin(t * 0.015 + length(cell) * 0.3) * 0.05);
-            
-            // Bottom-left to top-right with temporal modulation
-            float dist1 = length(rotatedPos);
-            float dist2 = length(rotatedPos - vec2(1.0, 1.0));
-            float arc1 = smoothstep(arcThick, arcThin, dist1);
-            float arc2 = smoothstep(arcThick, arcThin, dist2);
-            float pattern1 = max(arc1, arc2);
-            
-            // Top-left to bottom-right with temporal modulation
-            float dist3 = length(rotatedPos - vec2(0.0, 1.0));
-            float dist4 = length(rotatedPos - vec2(1.0, 0.0));
-            float arc3 = smoothstep(arcThick, arcThin, dist3);
-            float arc4 = smoothstep(arcThick, arcThin, dist4);
-            float pattern2 = max(arc3, arc4);
-            
-            // Blend between patterns for organic transitions
-            arcPattern = mix(pattern1, pattern2, tileTransition);
-            
-            // Create tile boundaries with temporal variation
-            float edgeWidth = 0.05 + sin(t * 0.03 + cellId * 4.0) * 0.01;
-            float edge = max(
-                smoothstep(edgeWidth, 0.0, min(fractPos.x, 1.0 - fractPos.x)),
-                smoothstep(edgeWidth, 0.0, min(fractPos.y, 1.0 - fractPos.y))
-            );
-            
-            // Add flowing detail to arcs - more fluid striped patterns
-            float arcDetail = 0.0;
-            
-            // Calculate continuous angles for smooth animation
-            float angle1 = atan(rotatedPos.y, rotatedPos.x);
-            float angle2 = atan(rotatedPos.y - 1.0, rotatedPos.x - 1.0);
-            float angle3 = atan(rotatedPos.y - 1.0, rotatedPos.x);
-            float angle4 = atan(rotatedPos.y, rotatedPos.x - 1.0);
-            
-            // Evolving stripe frequency and phase
-            float stripeFreq = 4.0 + sin(t * 0.02 + cellId * 7.0) * 1.0;
-            float stripePhase = t * 0.05;
-            
-            // Create flowing wave patterns along the arcs
-            float stripeFlow1 = sin(angle1 * stripeFreq + stripePhase + cellId * 10.0);
-            float stripeFlow2 = sin(angle2 * stripeFreq + stripePhase + cellId * 11.0);
-            float stripeFlow3 = sin(angle3 * stripeFreq + stripePhase + cellId * 12.0);
-            float stripeFlow4 = sin(angle4 * stripeFreq + stripePhase + cellId * 13.0);
-            
-            // Smoother transitions for stripes using smoothstep instead of step
-            float detail1 = smoothstep(-0.2, 0.2, stripeFlow1) * arc1;
-            float detail2 = smoothstep(-0.2, 0.2, stripeFlow2) * arc2;
-            float detail3 = smoothstep(-0.2, 0.2, stripeFlow3) * arc3;
-            float detail4 = smoothstep(-0.2, 0.2, stripeFlow4) * arc4;
-            
-            // Blend details based on tile transition
-            float details12 = max(detail1, detail2);
-            float details34 = max(detail3, detail4);
-            arcDetail = mix(details12, details34, tileTransition);
-            
-            // Add subtle reaction-diffusion effect similar to simplexNoise
-            float reactionSpeed = t * 0.07;
-            float reactionEffect = smoothstep(0.3, 0.7, 
-                sin(length(rotatedPos - 0.5) * 8.0 + reactionSpeed) * 0.5 + 0.5
-            ) * 0.15;
-            
-            // Create organic flow field distortion
-            float flowFieldTime = t * 0.06;
-            float flowX = sin(rotatedPos.x * 3.0 + flowFieldTime) * 0.1;
-            float flowY = cos(rotatedPos.y * 3.0 + flowFieldTime * 1.1) * 0.1;
-            float flowEffect = (flowX + flowY) * cellPhase * 0.2;
-            
-            // Combine patterns with organic blending
-            float blendFactor = 0.4 + 0.1 * sin(t * 0.04);
-            float basePattern = max(arcPattern * 0.8, arcDetail * 0.5);
-            float organicPattern = basePattern + reactionEffect + flowEffect;
-            
-            // Add edge highlighting with temporal variation
-            organicPattern = max(organicPattern, edge * (0.9 + sin(t * 0.05) * 0.1));
-            
-            // Add feedback influence for more fluid evolution
-            float feedback = sin(organicPattern * 3.0 + t * 0.03) * 0.1;
-            organicPattern += feedback;
-            
-            return organicPattern * 2.0 - 1.0;
-        }
-
+        
 //////////////////////////////////////////////////
 
 
@@ -472,8 +325,8 @@
         vec2 domainWarp(vec2 p, float time) {
             float slowTime = u_time * 0.0001;
             
-            float flow = simplexNoise2(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
-            float detail = simplexNoise2(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
+            float flow = simplexNoise(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
+            float detail = simplexNoise(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
             
             // Use fast approximations
             float angle = slowTime * 0.1;
@@ -488,8 +341,8 @@
 
         float layeredNoise(vec2 p, float time) {
             // Simplified to single layer with detail
-            float mainLayer = simplexNoise2(p, time);
-            float detail = simplexNoise2(p * 2.0, time * 0.3) * 0.3;
+            float mainLayer = simplexNoise(p, time);
+            float detail = simplexNoise(p * 2.0, time * 0.3) * 0.3;
             return mainLayer * 0.7 + detail * 0.3;
         }
 
@@ -1112,7 +965,7 @@
                 localCoord.x * sinA + localCoord.y * cosA
             );
             
-            float smoothedTime = u_time * 0.01 + simplexNoise2(vec2(u_time * 0.3, 50.0), u_nS) * 0.005;
+            float smoothedTime = u_time * 0.01 + simplexNoise(vec2(u_time * 0.3, 50.0), u_nS) * 0.005;
             
             vec2 noiseInput1 = rotatedCoord * ((u_cellSize / u_resolution.y) * 1.0) + smoothedTime;
             vec2 noiseInput2 = (rotatedCoord + gridCoord * gridSize) * ((u_cellSize / u_resolution.y) * 1.0) * u_noiseScale;
@@ -1151,8 +1004,8 @@
             // Pre-calculate threshold and blend factor outside loop
             float threshold = 0.55 - (0.15 * pow(1.0 - u_bS, 2.0));
             
-            float t = simplexNoise2(vec2(u_time * 0.01), 0.0) * 0.5 + 0.5;
-            float angleInfluence = simplexNoise2(vec2(u_time * 0.005), 0.0) * 0.5 + 0.5;
+            float t = simplexNoise(vec2(u_time * 0.01), 0.0) * 0.5 + 0.5;
+            float angleInfluence = simplexNoise(vec2(u_time * 0.005), 0.0) * 0.5 + 0.5;
             float blendFactor = t * t * (3.0 - 2.0 * t) * (1.0 + combinedNoise * 0.8 + angleInfluence * 1.2);
             
             // Prepare edge values for color transitions
@@ -1276,7 +1129,7 @@
         let rSS;
         let roA;
         let nOX, nOY;
-        let scF = 40;
+        let scF = 30;
         let tX = 0, tY = 0;
         let iTX = 0, iTY = 0;
         let pMX, pMY;
@@ -1477,10 +1330,10 @@
                             }
                         } else if (tapCount === 3) {
                             // Triple tap - toggle scale factor (control D)
-                            if (scF === 40) {
+                            if (scF === 30) {
                                 scF = 15;
                             } else {
-                                scF = 40;
+                                scF = 30;
                             }
                             upTC();
                             tapCount = 0; // Reset tap count after triple tap
@@ -1567,10 +1420,10 @@
                          
                     case 'd':
                         
-                        if (scF === 40) {
+                        if (scF === 30) {
                             scF = 15;
                         } else {
-                            scF = 40;
+                            scF = 30;
                         }
                         upTC();
                         break;
@@ -1811,7 +1664,7 @@
             tS.setUniform('u_trailTimes', new Array(MAX_TRAIL_POINTS).fill(TRAIL_LIFETIME / 1000.0));
             tS.setUniform('u_trailCount', 0);
 
-            scF = 40;
+            scF = 30;
             upTC();
             suEH();
 
