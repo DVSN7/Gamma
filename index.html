@@ -1392,24 +1392,27 @@
             lastResolutionCheck = performance.now();
             lastResolutionChange = performance.now();
             
+            // Fixed depth for shader (not adaptive)
+            const fixedMaxDepth = 5;
+            
             // Detect device capabilities and adjust settings
             const deviceInfo = detectDeviceCapabilities();
             
-            // Initialize pixel density based on device capabilities
+            // Adjust resolution settings based on device type
             if (deviceInfo.isLowEndDevice) {
-                currentPixelDensity = 1.0;
+                // Start with lower resolution on low-end devices
+                applyResolutionScale(0.7);
             } else if (deviceInfo.isTablet) {
-                currentPixelDensity = 1.5;
-            } else {
-                currentPixelDensity = 2.0;
+                applyResolutionScale(0.85);
             }
+            
+            // Initialize pixel density (fixed at 1.0 since we're using adaptive resolution)
+            currentPixelDensity = 1.0;
             pixelDensity(currentPixelDensity);
             
-            // Apply initial resolution
-            if (ADAPTIVE_RESOLUTION.ENABLED) {
-                // Adaptive resolution initial scale is already set by detectDeviceCapabilities
-                upCS(); // Update canvas size with adaptive resolution applied
-            }
+            // Initialize the cell size based on the fixed number of cells vertically
+            // Regardless of resolution, we always want cV cells in the vertical dimension
+            cS = windowHeight / cV;
             
             // Pre-allocate recording chunk pool if WebM recording is supported
             if (typeof MediaRecorder !== 'undefined') {
@@ -1449,7 +1452,7 @@
             bS = bS || 1.0;
             
             // Initialize essential uniforms with defaults to avoid black screen
-            setShaderUniform('u_maxDepth', 6);
+            setShaderUniform('u_maxDepth', fixedMaxDepth); // Use fixed depth
             setShaderUniform('u_nS', nS);
             setShaderUniform('u_rSS', rSS);
             setShaderUniform('u_roA', radians(roA));
@@ -1469,28 +1472,11 @@
             setShaderUniform('u_sortAnimSpeed', soA);
             setShaderUniform('u_caScaleVariation', 0.5);
             
-            // These uniforms need to be set every frame, but initialize them here too
-            setShaderUniform('u_bS', bS);
-            setShaderUniform('u_scaleFactor', scF || 30);
-            setShaderUniform('u_translation', [tX || 0, tY || 0]);
-            setShaderUniform('u_resolution', [width, height]);
-            setShaderUniform('u_time', 0);
-            setShaderUniform('u_cellSize', (height / cV) * bS);
-            setShaderUniform('u_flowSpeed', fS);
-            setShaderUniform('u_currentPattern', cuP);
-            setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
-            
-            // Initialize feature toggle uniforms
-            setShaderUniform('u_enableDomainWarp', true);
-            setShaderUniform('u_enableLayeredNoise', true);
-            setShaderUniform('u_enableFlowFields', true);
-            setShaderUniform('u_enableGlyphNoise', true);
-            setShaderUniform('u_enableGridDistort', true);
-            setShaderUniform('u_enableGlyphNoiseDetail', true);
+            // Update canvas size with the current aspect ratio and resolution settings
+            upCS();
             
             if (inscription_id) {
                 // Original initialization for specific inscription
-                upCS();
                 
                 // Setup event handlers with optimized implementation
                 suEH();
@@ -1634,7 +1620,6 @@
                 setShaderUniform('u_caScaleVariation', cASV);
             } else {
                 // Generic setup for no inscription
-                upCS();
                 suEH();
                 
                 // Set default scale and position
@@ -1728,7 +1713,6 @@
         function draw() {
             // Skip rendering when tab is not visible
             if (!isTabVisible) {
-                console.log("Tab not visible, skipping render");
                 return;
             }
             
@@ -1746,39 +1730,18 @@
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
-                console.log("FPS:", currentFPS.toFixed(1));
                 
-                // Check adaptive resolution on FPS updates
-                updateAdaptiveResolution();
-            }
-            
-            // Performance monitoring and adaptation
-            if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
-                lastPerformanceCheck = now;
-                
-                // Only adjust pixel density if enough time has passed since last change
-                // and we're not using adaptive resolution scaling
-                if (!ADAPTIVE_RESOLUTION.ENABLED && 
-                    now - lastPixelDensityChange > MIN_DENSITY_CHANGE_INTERVAL) {
-                    let targetDensity;
-                    
-                    // Set quality based on performance
-                    if (currentFPS <= MIN_FPS_THRESHOLD) {
-                        targetDensity = 1.0;
-                    } else if (currentFPS <= MID_FPS_THRESHOLD) {
-                        targetDensity = 1.5;
-                    } else {
-                        targetDensity = 2.0;
-                    }
-                    
-                    // Only change if target is different from current
-                    if (targetDensity !== currentPixelDensity) {
-                        currentPixelDensity = targetDensity;
-                        pixelDensity(currentPixelDensity);
-                        lastPixelDensityChange = now;
-                        console.log('Adjusting pixel density to:', currentPixelDensity, 'FPS:', currentFPS.toFixed(1));
-                    }
+                // Log FPS occasionally to avoid console spam
+                if (frameCount % 60 === 0) {
+                    console.log("FPS:", currentFPS.toFixed(1), "Resolution:", Math.round(currentResolutionScale * 100) + "%");
                 }
+                
+                // Update performance tracking arrays
+                fpsHistory.push(currentFPS);
+                if (fpsHistory.length > 5) fpsHistory.shift();
+                
+                // Apply only adaptive resolution
+                updateAdaptiveResolution();
             }
             
             // Periodic memory cleanup
@@ -1844,6 +1807,28 @@
             }
             shader(tS);
             
+            // Use fixed max depth of 5
+            const fixedMaxDepth = 5;
+            
+            // Calculate cell size based on the fixed number of cells (cV)
+            // When using adaptive resolution, adjust cell size to maintain proportions
+            let displayHeight;
+            if (ADAPTIVE_RESOLUTION.ENABLED) {
+                // Calculate what the height would be at 100% resolution
+                const fullResHeight = height / currentResolutionScale;
+                // Use this for cell size calculation to maintain consistent cell count
+                displayHeight = fullResHeight;
+            } else {
+                displayHeight = height;
+            }
+            
+            // Update the cell size using the full resolution height to maintain proper scaling
+            cS = displayHeight / cV;
+            
+            // Calculate noise scale properly based on the fixed cell count
+            const cellSizePercent = displayHeight / cV;
+            const noiseScale = bN * (100.0 / floor(cellSizePercent));
+            
             // Batch update uniform values to minimize WebGL state changes
             // Use optimal shader uniform updates with caching to prevent redundant WebGL calls
             const uniforms = {
@@ -1852,7 +1837,7 @@
                 'u_translation': [tX, tY],
                 'u_resolution': [width, height],
                 'u_time': scT,
-                'u_cellSize': (height / cV) * bS,
+                'u_cellSize': cS * bS, // Use properly calculated cell size
                 'u_flowSpeed': fS,
                 'u_luminosity': lum,
                 'u_vibrancy': vib,
@@ -1860,18 +1845,10 @@
                 'u_sortFrequency': soF,
                 'u_sortAnimSpeed': soA,
                 'u_currentPattern': cuP,
-                'u_noiseScale': bN * (100.0 / floor(height / cV)),
-                'u_caScaleVariation': 0.5
+                'u_noiseScale': noiseScale,
+                'u_caScaleVariation': 0.5,
+                'u_maxDepth': fixedMaxDepth
             };
-            
-            // Log key uniforms for debugging
-            if (frameCount % 300 === 0) {
-                console.log("Key uniforms:", {
-                    resolution: uniforms['u_resolution'],
-                    time: uniforms['u_time'],
-                    cellSize: uniforms['u_cellSize']
-                });
-            }
             
             try {
                 // Update all uniforms at once to reduce shader binding state changes
@@ -1890,6 +1867,51 @@
             }
         }
         
+        function applyResolutionScale(scale) {
+            // Skip if no change or outside valid range
+            if (scale === currentResolutionScale || 
+                scale < ADAPTIVE_RESOLUTION.MIN_SCALE || 
+                scale > ADAPTIVE_RESOLUTION.MAX_SCALE) {
+                return;
+            }
+            
+            // Store old dimensions for proportional calculations
+            const oldWidth = width;
+            const oldHeight = height;
+            
+            currentResolutionScale = scale;
+            
+            // Calculate new canvas size based on window size and scale
+            const targetWidth = Math.floor(windowWidth * scale);
+            const targetHeight = Math.floor(windowHeight * scale);
+            
+            // Only resize if significant change
+            if (Math.abs(width - targetWidth) > 10 || Math.abs(height - targetHeight) > 10) {
+                // Before resizing, calculate the current center position in world space
+                const worldCenterX = tX + width / 2;
+                const worldCenterY = tY + height / 2;
+                
+                // Apply new size to the rendering buffer
+                resizeCanvas(targetWidth, targetHeight);
+                
+                // Keep display size the same (CSS will handle scaling up)
+                if (canvasElement) {
+                    canvasElement.style.width = `${windowWidth}px`;
+                    canvasElement.style.height = `${windowHeight}px`;
+                }
+                
+                console.log(`Adaptive resolution: ${Math.round(scale * 100)}% (${targetWidth}x${targetHeight})`);
+                
+                // Update translation to maintain the same center point in world space
+                tX = worldCenterX - width / 2;
+                tY = worldCenterY - height / 2;
+                
+                // Recalculate cell size to maintain the fixed number of cells vertically
+                // This ensures visual consistency regardless of resolution
+                cS = (windowHeight / cV);
+            }
+        }
+
         // Efficient batch update of shader uniforms
         function updateShaderUniforms(uniformsObj) {
             // Ensure shader is bound only once
@@ -2035,12 +2057,12 @@
                 }
                 
                 // Always use p5's rendering path for now
-                beginShape();
-                vertex(0, 0, 0, 0, 0);
-                vertex(2, 0, 0, 1, 0);
-                vertex(2, 2, 0, 1, 1);
-                vertex(0, 2, 0, 0, 1);
-                endShape(CLOSE);
+            beginShape();
+            vertex(0, 0, 0, 0, 0);
+            vertex(2, 0, 0, 1, 0);
+            vertex(2, 2, 0, 1, 1);
+            vertex(0, 2, 0, 0, 1);
+            endShape(CLOSE);
             } catch (e) {
                 console.error("Error in renderFullscreenQuad:", e);
                 // Ultimate fallback
@@ -2216,14 +2238,14 @@
 
         // Add these constants at the top of the script section
         const ADAPTIVE_RESOLUTION = {
-            ENABLED: true,              // Master toggle for adaptive resolution
-            MIN_SCALE: 0.5,             // Minimum resolution scale (0.5 = 50% of full resolution)
-            MAX_SCALE: 1.0,             // Maximum resolution scale (1.0 = 100% of full resolution) 
-            TARGET_FPS: 50,             // Target FPS to maintain
-            ADJUSTMENT_RATE: 0.05,      // How quickly to adjust resolution (higher = faster changes)
-            CHECK_INTERVAL: 1000,       // How often to check performance (milliseconds)
-            STABILITY_THRESHOLD: 5,     // FPS difference threshold for considering stable
-            UPSCALE_DELAY: 3000         // Wait time before attempting to increase resolution
+            ENABLED: true,               // Enable adaptive resolution
+            MIN_SCALE: 0.4,              // Minimum resolution scale (40% of full resolution)
+            MAX_SCALE: 1.0,              // Maximum resolution scale (100% of full resolution) 
+            TARGET_FPS: 45,              // Target FPS to maintain
+            ADJUSTMENT_RATE: 0.05,       // How quickly to adjust resolution (higher = faster changes)
+            CHECK_INTERVAL: 1000,        // How often to check performance (milliseconds)
+            STABILITY_THRESHOLD: 5,      // FPS difference threshold for considering stable
+            UPSCALE_DELAY: 3000          // Wait time before attempting to increase resolution
         };
         
         // Add these variables to track adaptive resolution state
@@ -2244,10 +2266,6 @@
             lastResolutionCheck = now;
             
             // Track FPS for stability detection
-            fpsHistory.push(currentFPS);
-            if (fpsHistory.length > 5) fpsHistory.shift();
-            
-            // Calculate average and stability
             const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
             const fpsVariance = Math.max(...fpsHistory) - Math.min(...fpsHistory);
             isPerformanceStable = fpsVariance < ADAPTIVE_RESOLUTION.STABILITY_THRESHOLD;
@@ -2258,19 +2276,26 @@
             // Determine if we need to adjust resolution
             let newScale = currentResolutionScale;
             
-            // If FPS is too low, decrease resolution
-            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS) {
+            // If FPS is too low, decrease resolution more aggressively
+            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 5) {
                 newScale = Math.max(
                     ADAPTIVE_RESOLUTION.MIN_SCALE,
                     currentResolutionScale - ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
                 );
             } 
+            // If FPS is slightly low, make smaller adjustments
+            else if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS) {
+                newScale = Math.max(
+                    ADAPTIVE_RESOLUTION.MIN_SCALE,
+                    currentResolutionScale - (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
+                );
+            }
             // If FPS is good and we haven't changed recently, try increasing resolution
             else if (avgFps > ADAPTIVE_RESOLUTION.TARGET_FPS + 10 && 
                     now - lastResolutionChange > ADAPTIVE_RESOLUTION.UPSCALE_DELAY) {
                 newScale = Math.min(
                     ADAPTIVE_RESOLUTION.MAX_SCALE,
-                    currentResolutionScale + ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
+                    currentResolutionScale + (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
                 );
             }
             
@@ -2313,6 +2338,94 @@
                 tX = tX * scaleChange;
                 tY = tY * scaleChange;
             }
+        }
+
+        // Add these constants for adaptive shader complexity
+        const ADAPTIVE_COMPLEXITY = {
+            ENABLED: false,              // Disable adaptive complexity
+            MIN_DEPTH: 3,                // Minimum depth value to maintain visual quality
+            MAX_DEPTH: 6,                // Maximum depth value for best quality
+            DEFAULT_DEPTH: 5,            // Default starting depth
+            QUALITY_LEVELS: [3, 4, 5, 6], // Different quality levels
+            TARGET_FPS: 45,              // Target FPS to maintain
+            CHECK_INTERVAL: 1000,        // How often to check performance (milliseconds)
+            CHANGE_DELAY: 2000,          // Minimum time between changes
+            UPSCALE_THRESHOLD: 55        // FPS above which we try to increase depth
+        };
+        
+        // Variables to track adaptive complexity
+        let currentDepth = ADAPTIVE_COMPLEXITY.DEFAULT_DEPTH;
+        let lastDepthCheck = 0;
+        let lastDepthChange = 0;
+        
+        function updateAdaptiveComplexity() {
+            // Skip if disabled
+            if (!ADAPTIVE_COMPLEXITY.ENABLED) return;
+            
+            const now = performance.now();
+            
+            // Only check periodically
+            if (now - lastDepthCheck < ADAPTIVE_COMPLEXITY.CHECK_INTERVAL) return;
+            lastDepthCheck = now;
+            
+            // Only adjust if enough time has passed since last change
+            if (now - lastDepthChange < ADAPTIVE_COMPLEXITY.CHANGE_DELAY) return;
+            
+            // Use the same FPS data we're already collecting
+            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
+            
+            // Determine if we need to adjust depth
+            let newDepth = currentDepth;
+            
+            // If FPS is too low, decrease depth
+            if (avgFps < ADAPTIVE_COMPLEXITY.TARGET_FPS) {
+                // Find the highest quality level that's lower than current
+                for (let i = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS.length - 1; i >= 0; i--) {
+                    if (ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i] < currentDepth) {
+                        newDepth = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i];
+                        break;
+                    }
+                }
+                // Ensure we don't go below minimum
+                newDepth = Math.max(ADAPTIVE_COMPLEXITY.MIN_DEPTH, newDepth);
+            } 
+            // If FPS is high, try increasing depth
+            else if (avgFps > ADAPTIVE_COMPLEXITY.UPSCALE_THRESHOLD) {
+                // Find the lowest quality level that's higher than current
+                for (let i = 0; i < ADAPTIVE_COMPLEXITY.QUALITY_LEVELS.length; i++) {
+                    if (ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i] > currentDepth) {
+                        newDepth = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i];
+                        break;
+                    }
+                }
+                // Ensure we don't exceed maximum
+                newDepth = Math.min(ADAPTIVE_COMPLEXITY.MAX_DEPTH, newDepth);
+            }
+            
+            // Apply the change if it's different
+            if (newDepth !== currentDepth) {
+                applyDepthChange(newDepth);
+                lastDepthChange = now;
+            }
+        }
+        
+        function applyDepthChange(depth) {
+            if (depth === currentDepth) return;
+            
+            currentDepth = depth;
+            setShaderUniform('u_maxDepth', depth);
+            
+            // You can also adjust other complexity parameters here if needed
+            // For example, reducing noise detail, disabling effects, etc.
+            
+            // Optionally disable certain effects at very low depths
+            if (depth <= ADAPTIVE_COMPLEXITY.MIN_DEPTH) {
+                setShaderUniform('u_enableGlyphNoiseDetail', false);
+            } else {
+                setShaderUniform('u_enableGlyphNoiseDetail', true);
+            }
+            
+            console.log(`Adaptive complexity: Depth set to ${depth}`);
         }
     </script>
   </body>
