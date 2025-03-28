@@ -1427,10 +1427,10 @@
             
             // Use existing shader if available, otherwise create it
             if (!tS) {
-                tS = createShader(
-                    document.getElementById('vertex-shader').textContent,
-                    document.getElementById('fragment-shader').textContent
-                );
+            tS = createShader(
+                document.getElementById('vertex-shader').textContent,
+                document.getElementById('fragment-shader').textContent
+            );
             }
             shader(tS);
             
@@ -1485,12 +1485,12 @@
                 nOY = R.I(0,2000);
                 setShaderUniform('u_nOS', [nOX, nOY]);
 
-                let shiftX = -width/2;
-                let shiftY = -height/2;
-                iTX = shiftX;
-                iTY = shiftY;
-                tX = shiftX;
-                tY = shiftY;
+            let shiftX = -width/2;
+            let shiftY = -height/2;
+            iTX = shiftX;
+            iTY = shiftY;
+            tX = shiftX;
+            tY = shiftY;
                 setShaderUniform('u_translation', [tX, tY]);
     
                 // Override random values for this inscription
@@ -1504,115 +1504,115 @@
                 setShaderUniform('u_rSS', rSS);
                 setShaderUniform('u_roA', radians(roA));
                 setShaderUniform('u_currentPattern', cuP);
-                
-                let teR = R.I(0, amV.length - 1);
-                let raA = amV[teR];
+            
+            let teR = R.I(0, amV.length - 1);
+            let raA = amV[teR];
                 setShaderUniform('u_amplitude', raA);
-                
-                let inF = [0.0005, 0.0001, 0.005];
-                let seF = inF[R.I(0,2)];
+            
+            let inF = [0.0005, 0.0001, 0.005];
+            let seF = inF[R.I(0,2)];
                 setShaderUniform('u_initialFreq', seF);
-                
-                cS = windowHeight / cV;
-                
-                let noSO = [0.005, 0.003, 0.001];
-                bN = noSO[R.I(0, 2)];
+            
+            cS = windowHeight / cV;
+            
+            let noSO = [0.005, 0.003, 0.001];
+            bN = noSO[R.I(0, 2)];  
                 setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
-    
-                let baM = R.N(0.5, 2.0);
+
+            let baM = R.N(0.5, 2.0);  
                 setShaderUniform('u_baseModulation', baM);
-                
+
                 // Color generation
-                function caCD(color1, color2) {
-                    const dr = color1[0] - color2[0];
-                    const dg = color1[1] - color2[1];
-                    const db = color1[2] - color2[2];
-                    return Math.sqrt(dr * dr + dg * dg + db * db);
-                }
-    
-                function geRC(brightnessType = 'light', baseHue = null, existingColors = []) {
-                    const miCD = 0.3;
-                    let at = 0;
-                    const maA = 10;
-    
-                    while (at < maA) {
-                        let h;
-                        if (brightnessType === 'mid' && baseHue !== null) {
-                            h = (baseHue + 0.5) % 1.0;
-                        } else {
-                            h = R.D();  
-                        }
-    
-                        let s = R.N(0.8, 1.0);  
-                        let v;
-                        
-                        switch(brightnessType) {
-                            case 'dark':
-                                v = R.N(0.15, 0.3);  
-                                break;
-                            case 'mid':
-                                v = R.N(0.5, 0.65);  
-                                break;
-                            case 'light':
-                                v = R.N(0.85, 1.0);  
-                                break;
-                        }
-    
-                        let i = Math.floor(h * 6);
-                        let f = h * 6 - i;
-                        let p = v * (1 - s);
-                        let q = v * (1 - f * s);
-                        let t = v * (1 - (1 - f) * s);
-    
-                        let r, g, b;
-                        switch (i % 6) {
-                            case 0: r = v, g = t, b = p; break;
-                            case 1: r = q, g = v, b = p; break;
-                            case 2: r = p, g = v, b = t; break;
-                            case 3: r = p, g = q, b = v; break;
-                            case 4: r = t, g = p, b = v; break;
-                            case 5: r = v, g = p, b = q; break;
-                        }
-    
-                        const newColor = [r, g, b];
-    
-                        let diC = true;
-                        for (const existingColor of existingColors) {
-                            if (caCD(newColor, existingColor) < miCD) {
-                                diC = false;
-                                break;
-                            }
-                        }
-    
-                        if (diC || at === maA - 1) {
-                            return { color: newColor, hue: h };
-                        }
-    
-                        at++;
+            function caCD(color1, color2) {
+                const dr = color1[0] - color2[0];
+                const dg = color1[1] - color2[1];
+                const db = color1[2] - color2[2];
+                return Math.sqrt(dr * dr + dg * dg + db * db);
+            }
+
+            function geRC(brightnessType = 'light', baseHue = null, existingColors = []) {
+                const miCD = 0.3;
+                let at = 0;
+                const maA = 10;
+
+                while (at < maA) {
+                    let h;
+                    if (brightnessType === 'mid' && baseHue !== null) {
+                        h = (baseHue + 0.5) % 1.0;
+} else {
+                        h = R.D();  
                     }
+
+                    let s = R.N(0.8, 1.0);  
+                    let v;
+                    
+                    switch(brightnessType) {
+                        case 'dark':
+                            v = R.N(0.15, 0.3);  
+                            break;
+                        case 'mid':
+                            v = R.N(0.5, 0.65);  
+                            break;
+                        case 'light':
+                            v = R.N(0.85, 1.0);  
+                            break;
+                    }
+                    
+                    let i = Math.floor(h * 6);
+                    let f = h * 6 - i;
+                    let p = v * (1 - s);
+                    let q = v * (1 - f * s);
+                    let t = v * (1 - (1 - f) * s);
+
+                    let r, g, b;
+                    switch (i % 6) {
+                        case 0: r = v, g = t, b = p; break;
+                        case 1: r = q, g = v, b = p; break;
+                        case 2: r = p, g = v, b = t; break;
+                        case 3: r = p, g = q, b = v; break;
+                        case 4: r = t, g = p, b = v; break;
+                        case 5: r = v, g = p, b = q; break;
+                    }
+
+                    const newColor = [r, g, b];
+                   
+                    let diC = true;
+                    for (const existingColor of existingColors) {
+                        if (caCD(newColor, existingColor) < miCD) {
+                            diC = false;
+                            break;
+                        }
+                    }
+
+                    if (diC || at === maA - 1) {
+                        return { color: newColor, hue: h };
+                    }
+
+                    at++;
                 }
-                
-                let liR = geRC('light', null, []);
-                let rC1 = liR.color;  
-                
-                let miR = geRC('mid', liR.hue, [rC1]);
-                let rC2 = miR.color;  
-                
-                let rC3 = geRC('dark', null, [rC1, rC2]).color;
-                
+            }
+            
+            let liR = geRC('light', null, []);
+            let rC1 = liR.color;  
+            
+            let miR = geRC('mid', liR.hue, [rC1]);
+            let rC2 = miR.color;  
+            
+            let rC3 = geRC('dark', null, [rC1, rC2]).color;  
+
                 // Update color uniforms with inscription-specific colors  
                 setShaderUniform('u_randomColor1', rC1);
                 setShaderUniform('u_randomColor2', rC2);
                 setShaderUniform('u_randomColor3', rC3);
-                
-                let baC = [
-                    [0.05, 0.05, 0.05, 1.0],  
-                    [0.90, 0.87, 0.82, 1.0]    
-                ];
-                
-                let sBaC = baC[R.D() < 0.6 ? 0 : 1];
-                let liBc = sBaC[0] > 0.5;
-                
+            
+            let baC = [
+                [0.05, 0.05, 0.05, 1.0],  
+                [0.90, 0.87, 0.82, 1.0]    
+            ];
+            
+            let sBaC = baC[R.D() < 0.6 ? 0 : 1];
+            let liBc = sBaC[0] > 0.5;
+
                 setShaderUniform('u_baseColor', sBaC);
                 setShaderUniform('u_isLightBackground', liBc);
                 
@@ -1623,18 +1623,18 @@
                 suEH();
                 
                 // Set default scale and position
-                scF = 30;
+            scF = 30;
                 tX = -width/2;
                 tY = -height/2;
                 iTX = tX;
                 iTY = tY;
-                
+
                 // Update these in the shader too
                 setShaderUniform('u_scaleFactor', scF);
                 setShaderUniform('u_translation', [tX, tY]);
             }
-            
-            stT = millis();
+
+            stT = millis();  
         }
 
         function upCS() {
@@ -1794,8 +1794,8 @@
                 pMY = undefined;
             }
 
-            let scT = cuT;
-            
+            let scT = cuT; 
+
             // Ensure shader is bound correctly
             if (!tS) {
                 console.error("Shader not initialized");
@@ -1875,10 +1875,19 @@
                 return;
             }
             
-            // Store old dimensions for proportional calculations
+            // Store current view center point in world coordinates
+            // This is the key to maintaining visual position during resolution changes
+            const viewCenterX = tX + (width / 2);
+            const viewCenterY = tY + (height / 2);
+            
+            // Store current transformation scaling
+            const oldScaleFactor = scF;
+            
+            // Store old dimensions for calculating scale ratio
             const oldWidth = width;
             const oldHeight = height;
             
+            // Update resolution scale
             currentResolutionScale = scale;
             
             // Calculate new canvas size based on window size and scale
@@ -1886,11 +1895,7 @@
             const targetHeight = Math.floor(windowHeight * scale);
             
             // Only resize if significant change
-            if (Math.abs(width - targetWidth) > 10 || Math.abs(height - targetHeight) > 10) {
-                // Before resizing, calculate the current center position in world space
-                const worldCenterX = tX + width / 2;
-                const worldCenterY = tY + height / 2;
-                
+            if (Math.abs(width - targetWidth) > 5 || Math.abs(height - targetHeight) > 5) {
                 // Apply new size to the rendering buffer
                 resizeCanvas(targetWidth, targetHeight);
                 
@@ -1898,17 +1903,125 @@
                 if (canvasElement) {
                     canvasElement.style.width = `${windowWidth}px`;
                     canvasElement.style.height = `${windowHeight}px`;
+                    
+                    // Ensure proper CSS centering
+                    canvasElement.style.position = 'absolute';
+                    canvasElement.style.left = '50%';
+                    canvasElement.style.top = '50%';
+                    canvasElement.style.transform = 'translate(-50%, -50%)';
                 }
                 
                 console.log(`Adaptive resolution: ${Math.round(scale * 100)}% (${targetWidth}x${targetHeight})`);
                 
-                // Update translation to maintain the same center point in world space
-                tX = worldCenterX - width / 2;
-                tY = worldCenterY - height / 2;
-                
                 // Recalculate cell size to maintain the fixed number of cells vertically
                 // This ensures visual consistency regardless of resolution
                 cS = (windowHeight / cV);
+                
+                // Calculate new translation to maintain exact center point
+                tX = viewCenterX - (width / 2);
+                tY = viewCenterY - (height / 2);
+            }
+        }
+        
+        // Configure adaptive resolution system with stability settings
+        const ADAPTIVE_RESOLUTION = {
+            ENABLED: true,                  // Enable adaptive resolution
+            MIN_SCALE: 0.4,                 // Minimum resolution scale (40% of full resolution)
+            MAX_SCALE: 1.0,                 // Maximum resolution scale (100% of full resolution) 
+            TARGET_FPS: 45,                 // Target FPS to maintain
+            ADJUSTMENT_RATE: 0.1,           // How quickly to adjust resolution (higher = faster changes)
+            CHECK_INTERVAL: 2000,           // How often to check performance (milliseconds)
+            STABILITY_THRESHOLD: 8,         // FPS difference threshold for considering stable
+            UPSCALE_DELAY: 5000,            // Wait time before attempting to increase resolution
+            CHANGE_THRESHOLD: 0.05,         // Minimum FPS difference to trigger change (% of target)
+            STABILITY_PERIOD: 20000,        // Once stable, lock resolution for this period (ms)
+            MAX_CHANGES_PER_MINUTE: 4       // Limit total changes per minute to prevent oscillation
+        };
+        
+        // Add variables to track resolution stability
+        let resolutionStableUntil = 0;
+        let lastResolutionChanges = [];
+        
+        // Update adaptive resolution to make smoother transitions
+        function updateAdaptiveResolution() {
+            // Skip if disabled
+            if (!ADAPTIVE_RESOLUTION.ENABLED) return;
+            
+            const now = performance.now();
+            
+            // Only check periodically
+            if (now - lastResolutionCheck < ADAPTIVE_RESOLUTION.CHECK_INTERVAL) return;
+            lastResolutionCheck = now;
+            
+            // Check if we're in a stability period and should skip changes
+            if (now < resolutionStableUntil) {
+                return;
+            }
+            
+            // Clean up old change timestamps
+            const oneMinuteAgo = now - 60000;
+            lastResolutionChanges = lastResolutionChanges.filter(time => time > oneMinuteAgo);
+            
+            // Check if we've made too many changes in the last minute
+            if (lastResolutionChanges.length >= ADAPTIVE_RESOLUTION.MAX_CHANGES_PER_MINUTE) {
+                console.log("Too many resolution changes recently, waiting to stabilize");
+                return;
+            }
+            
+            // Track FPS for stability detection
+            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
+            const fpsVariance = Math.max(...fpsHistory) - Math.min(...fpsHistory);
+            isPerformanceStable = fpsVariance < ADAPTIVE_RESOLUTION.STABILITY_THRESHOLD;
+            
+            // Calculate FPS difference from target (as percentage)
+            const fpsDiffPercent = Math.abs(avgFps - ADAPTIVE_RESOLUTION.TARGET_FPS) / ADAPTIVE_RESOLUTION.TARGET_FPS;
+            
+            // Only change if difference is significant
+            if (fpsDiffPercent < ADAPTIVE_RESOLUTION.CHANGE_THRESHOLD && isPerformanceStable) {
+                // If we're within threshold of target and stable, lock in this resolution
+                if (resolutionStableUntil === 0) {
+                    console.log(`Resolution ${Math.round(currentResolutionScale * 100)}% locked for stability period`);
+                    resolutionStableUntil = now + ADAPTIVE_RESOLUTION.STABILITY_PERIOD;
+                }
+                return;
+            }
+            
+            let newScale = currentResolutionScale;
+            
+            // If FPS is too low, decrease resolution more aggressively
+            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 15) {
+                // Large drop for very poor performance
+                newScale = Math.max(
+                    ADAPTIVE_RESOLUTION.MIN_SCALE,
+                    currentResolutionScale - ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
+                );
+            } 
+            // If FPS is slightly low, make smaller adjustments
+            else if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 5) {
+                newScale = Math.max(
+                    ADAPTIVE_RESOLUTION.MIN_SCALE,
+                    currentResolutionScale - (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
+                );
+            }
+            // If FPS is good and we haven't changed recently, try increasing resolution
+            else if (avgFps > ADAPTIVE_RESOLUTION.TARGET_FPS + 15 && 
+                      now - lastResolutionChange > ADAPTIVE_RESOLUTION.UPSCALE_DELAY &&
+                      isPerformanceStable) {
+                // Only increase resolution when performance is very good and stable
+                newScale = Math.min(
+                    ADAPTIVE_RESOLUTION.MAX_SCALE,
+                    currentResolutionScale + (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 4) // Very slow upscaling
+                );
+            }
+            
+            // Apply the change if it's different enough to matter
+            if (Math.abs(newScale - currentResolutionScale) > 0.03) {
+                applyResolutionScale(newScale);
+                lastResolutionChange = now;
+                lastResolutionChanges.push(now);
+                
+                // Reset stability period when we make a change
+                resolutionStableUntil = 0;
             }
         }
 
@@ -2236,127 +2349,12 @@
             }
         }
 
-        // Add these constants at the top of the script section
-        const ADAPTIVE_RESOLUTION = {
-            ENABLED: true,               // Enable adaptive resolution
-            MIN_SCALE: 0.4,              // Minimum resolution scale (40% of full resolution)
-            MAX_SCALE: 1.0,              // Maximum resolution scale (100% of full resolution) 
-            TARGET_FPS: 45,              // Target FPS to maintain
-            ADJUSTMENT_RATE: 0.05,       // How quickly to adjust resolution (higher = faster changes)
-            CHECK_INTERVAL: 1000,        // How often to check performance (milliseconds)
-            STABILITY_THRESHOLD: 5,      // FPS difference threshold for considering stable
-            UPSCALE_DELAY: 3000          // Wait time before attempting to increase resolution
-        };
-        
         // Add these variables to track adaptive resolution state
         let currentResolutionScale = 1.0;
         let lastResolutionCheck = 0;
         let lastResolutionChange = 0;
         let fpsHistory = [];
         let isPerformanceStable = false;
-        
-        function updateAdaptiveResolution() {
-            // Skip if disabled
-            if (!ADAPTIVE_RESOLUTION.ENABLED) return;
-            
-            const now = performance.now();
-            
-            // Only check periodically
-            if (now - lastResolutionCheck < ADAPTIVE_RESOLUTION.CHECK_INTERVAL) return;
-            lastResolutionCheck = now;
-            
-            // Track FPS for stability detection
-            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
-            const fpsVariance = Math.max(...fpsHistory) - Math.min(...fpsHistory);
-            isPerformanceStable = fpsVariance < ADAPTIVE_RESOLUTION.STABILITY_THRESHOLD;
-            
-            // Only make changes if we've been stable for a while
-            if (!isPerformanceStable) return;
-            
-            // Determine if we need to adjust resolution
-            let newScale = currentResolutionScale;
-            
-            // If FPS is too low, decrease resolution more aggressively
-            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 5) {
-                newScale = Math.max(
-                    ADAPTIVE_RESOLUTION.MIN_SCALE,
-                    currentResolutionScale - ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
-                );
-            } 
-            // If FPS is slightly low, make smaller adjustments
-            else if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS) {
-                newScale = Math.max(
-                    ADAPTIVE_RESOLUTION.MIN_SCALE,
-                    currentResolutionScale - (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
-                );
-            }
-            // If FPS is good and we haven't changed recently, try increasing resolution
-            else if (avgFps > ADAPTIVE_RESOLUTION.TARGET_FPS + 10 && 
-                    now - lastResolutionChange > ADAPTIVE_RESOLUTION.UPSCALE_DELAY) {
-                newScale = Math.min(
-                    ADAPTIVE_RESOLUTION.MAX_SCALE,
-                    currentResolutionScale + (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
-                );
-            }
-            
-            // Apply the change if it's different
-            if (Math.abs(newScale - currentResolutionScale) > 0.01) {
-                applyResolutionScale(newScale);
-                lastResolutionChange = now;
-            }
-        }
-        
-        function applyResolutionScale(scale) {
-            // Skip if no change or outside valid range
-            if (scale === currentResolutionScale || 
-                scale < ADAPTIVE_RESOLUTION.MIN_SCALE || 
-                scale > ADAPTIVE_RESOLUTION.MAX_SCALE) {
-                return;
-            }
-            
-            currentResolutionScale = scale;
-            
-            // Calculate new canvas size based on window size and scale
-            const targetWidth = Math.floor(windowWidth * scale);
-            const targetHeight = Math.floor(windowHeight * scale);
-            
-            // Only resize if significant change
-            if (Math.abs(width - targetWidth) > 10 || Math.abs(height - targetHeight) > 10) {
-                // Apply new size to the rendering buffer
-                resizeCanvas(targetWidth, targetHeight);
-                
-                // Keep display size the same (CSS will handle scaling up)
-                if (canvasElement) {
-                    canvasElement.style.width = `${windowWidth}px`;
-                    canvasElement.style.height = `${windowHeight}px`;
-                }
-                
-                console.log(`Adaptive resolution: ${Math.round(scale * 100)}% (${targetWidth}x${targetHeight})`);
-                
-                // Update coordinates and translation to match new resolution
-                const scaleChange = width / targetWidth;
-                tX = tX * scaleChange;
-                tY = tY * scaleChange;
-            }
-        }
-
-        // Add these constants for adaptive shader complexity
-        const ADAPTIVE_COMPLEXITY = {
-            ENABLED: false,              // Disable adaptive complexity
-            MIN_DEPTH: 3,                // Minimum depth value to maintain visual quality
-            MAX_DEPTH: 6,                // Maximum depth value for best quality
-            DEFAULT_DEPTH: 5,            // Default starting depth
-            QUALITY_LEVELS: [3, 4, 5, 6], // Different quality levels
-            TARGET_FPS: 45,              // Target FPS to maintain
-            CHECK_INTERVAL: 1000,        // How often to check performance (milliseconds)
-            CHANGE_DELAY: 2000,          // Minimum time between changes
-            UPSCALE_THRESHOLD: 55        // FPS above which we try to increase depth
-        };
-        
-        // Variables to track adaptive complexity
-        let currentDepth = ADAPTIVE_COMPLEXITY.DEFAULT_DEPTH;
-        let lastDepthCheck = 0;
-        let lastDepthChange = 0;
         
         function updateAdaptiveComplexity() {
             // Skip if disabled
