@@ -44,7 +44,7 @@
     <script id="fragment-shader" type="x-shader/x-fragment">
         #ifdef GL_ES
         precision mediump float;
-        precision lowp int;  
+        precision lowp int;  // Integer precision can be low for most operations
         #endif
 
         #define M_PI 3.14159265358979323846
@@ -73,32 +73,23 @@
         uniform int u_currentPattern;
         uniform float u_baseModulation;
         uniform vec4 u_baseColor;
-        uniform vec3 u_randomColor1;  
+        uniform vec3 u_randomColor1;  // Add uniforms for random colors
         uniform vec3 u_randomColor2;
         uniform vec3 u_randomColor3;
         
-        
-        
+        // Add new toggle uniforms
+        uniform bool u_enableDomainWarp;    // Toggle domain warping
+        uniform bool u_enableLayeredNoise;  // Toggle layered noise
+        uniform bool u_enableFlowFields;    // Toggle flow field distortion
+        uniform bool u_enableGlyphNoise;    // Toggle glyph pattern noise
+        uniform bool u_enableGridDistort;   // Toggle grid distortion
         uniform bool u_enableGlyphNoiseDetail;    // Toggle detail noise within glyphs
 
         // Add the isLightBackground uniform to the shader
         uniform bool u_isLightBackground;   // Whether we're using a light background
 
-        // Add uniform for muted colors
-        uniform bool u_useMutedColors;     // Whether we're using muted colors
-        
         // Add this uniform after the other uniforms in the fragment shader
         uniform float u_caScaleVariation;  // Controls how much the CA scale varies
-        
-        // Add uniforms for mouse position
-        uniform vec2 u_mouse;             // Mouse position in normalized coordinates
-        uniform bool u_mouseActive;       // Whether mouse is over the canvas
-        uniform float u_mouseInfluenceRadius; // Radius of mouse influence (added)
-
-        // Add trail system uniforms
-        uniform vec2 u_trailPositions[20];   // Trail point positions
-        uniform float u_trailTimes[20];      // Trail point timestamps
-        uniform int u_trailCount;            // Number of active trail points
 
         lowp float random(vec2 st, float seed) {
             // Hash function only needs low precision output
@@ -138,142 +129,142 @@
         lowp vec3 permute(vec3 x) { 
             return mod289((x * 34.0 + 1.0) * x); 
         }
-//////////////////////////////////////////////////////////////////////
-mediump float simplexNoise(mediump vec2 v, float time) {
-    const mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
-    
-    // Combine time addition into a single step
-    v += time * 0.03;
-    
-    // Integer calculations can use low precision
-    lowp vec2 i = floor(v + dot(v, C.yy));
-    mediump vec2 x0 = v - i + dot(i, C.xx);
-    
-    // These boolean operations and offsets can use low precision
-    lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-    
-    // Combined calculations to reduce register usage
-    mediump vec4 x12 = x0.xyxy + C.xxzz;
-    x12.xy -= i1;
-    
-    // Use existing mod289 function
-    i = mod289(i);
-    lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-    
-    // Dot products need medium precision
-    mediump vec3 dots = vec3(
-        dot(x0, x0),
-        dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
-        dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
-    );
-    
-    // These multiplications can use low precision
-    lowp vec3 m = max(0.5 - dots, 0.0);
-    m = m * m;
-    m = m * m;
-    
-    // These can use low precision
-    lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
-    lowp vec3 h = abs(x) - 0.5;
-    lowp vec3 ox = floor(x + 0.5);
-    lowp vec3 a0 = x - ox;
-    
-    // Final calculation
-    m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
-    
-    // Gradient calculation
-    lowp vec3 g = vec3(
-        a0.x * x0.x + h.x * x0.y,
-        a0.y * x12.x + h.y * x12.y,
-        a0.z * x12.z + h.z * x12.w
-    );
-    
-    return 130.0 * dot(m, g);
-}
 
-lowp float fastSin(float x) {
-    // Wrap to -PI to PI range
-    x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
-    
-    // Fast sine approximation
-    // Error < 0.002
-    float x2 = x * x;
-    return x * (1.0 - x2 / (3.0 * 2.0) + x2 * x2 / (5.0 * 4.0 * 3.0 * 2.0));
-}
+        mediump float simplexNoise(mediump vec2 v, float time) {
+            // Original simplex noise variables and setup
+            mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+            
+            // Combine time addition into a single step
+            v += time * 0.03;
+            
+            // Integer calculations can use low precision
+            lowp vec2 i = floor(v + dot(v, C.yy));
+            mediump vec2 x0 = v - i + dot(i, C.xx);
+            
+            // These boolean operations and offsets can use low precision
+            lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            
+            // Combined calculations to reduce register usage
+            mediump vec4 x12 = x0.xyxy + C.xxzz;
+            x12.xy -= i1;
+            
+            // Use existing mod289 function
+            i = mod289(i);
+            lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+            
+            // Dot products need medium precision
+            mediump vec3 dots = vec3(
+                dot(x0, x0),
+                dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
+                dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
+            );
+            
+            // These multiplications can use low precision
+            lowp vec3 m = max(0.5 - dots, 0.0);
+            m = m * m;
+            m = m * m;
+            
+            // These can use low precision
+            lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
+            lowp vec3 h = abs(x) - 0.5;
+            lowp vec3 ox = floor(x + 0.5);
+            lowp vec3 a0 = x - ox;
+            
+            // Final calculation
+            m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
+            
+            // Gradient calculation
+            lowp vec3 g = vec3(
+                a0.x * x0.x + h.x * x0.y,
+                a0.y * x12.x + h.y * x12.y,
+                a0.z * x12.z + h.z * x12.w
+            );
+            
+            return 130.0 * dot(m, g);
+        }
 
-lowp float fastCos(float x) {
-    return fastSin(x + M_PI * 0.5);
-}
+        lowp float fastSin(float x) {
+            // Wrap to -PI to PI range
+            x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
+            
+            // Fast sine approximation
+            // Error < 0.002
+            float x2 = x * x;
+            return x * (1.0 - x2 / (3.0 * 2.0) + x2 * x2 / (5.0 * 4.0 * 3.0 * 2.0));
+        }
 
-vec2 domainWarp(vec2 p, float time) {
-    float slowTime = time * 0.0001;
-    
-    float flow = simplexNoise(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
-    float detail = simplexNoise(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
-    
-    // Use fast approximations
-    float angle = slowTime * 0.1;
-    float rotX = fastCos(angle) * flow;
-    float rotY = fastSin(angle) * flow;
-    
-    return p + vec2(
-        rotX * 1.5 + detail,
-        rotY * 1.5 + detail
-    );
-}
+        lowp float fastCos(float x) {
+            return fastSin(x + M_PI * 0.5);
+        }
 
-float layeredNoise(vec2 p, float time) {
-    // Simplified to single layer with detail
-    float mainLayer = simplexNoise(p, time);
-    float detail = simplexNoise(p * 2.0, time * 0.3) * 0.3;
-    return mainLayer * 0.7 + detail * 0.3;
-}
+        vec2 domainWarp(vec2 p, float time) {
+            float slowTime = time * 0.0001;
+            
+            float flow = simplexNoise(p * 0.05 * (u_resolution.y / u_cellSize) + slowTime, slowTime);
+            float detail = simplexNoise(p * 0.1 * (u_resolution.y / u_cellSize) + slowTime * 1.5, slowTime * 2.0) * 0.3;
+            
+            // Use fast approximations
+            float angle = slowTime * 0.1;
+            float rotX = fastCos(angle) * flow;
+            float rotY = fastSin(angle) * flow;
+            
+            return p + vec2(
+                rotX * 1.5 + detail,
+                rotY * 1.5 + detail
+            );
+        }
 
-float fbmSimplexNoise(vec2 v, int octaves) {
-    if (octaves <= 0) return 0.0;
-    
-    const float PERSISTENCE = 0.001;
-    const float LACUNARITY = 0.0009;
-    const int MAX_OCTAVES = 2;
-    
-    float total = 0.0;
-    float amplitude = u_amplitude;
-    float frequency = u_initialFreq;
-    
-    // Apply initial offsets
-    v += u_nOS + vec2(u_nS);
-    
-    // Calculate base pattern with simplified domain warping
-    vec2 warpedCoord = domainWarp(v, u_time * 0.1);
-    float basePattern = layeredNoise(warpedCoord, u_time);
-    total = amplitude * basePattern;
-    
-    // Simplified time influence - single noise sample
-    float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
-    
-    // Only two octaves with simplified rotation
-    float timeRotation = u_time * 0.05;
-    // Precalculate sin/cos using fast approximations
-    float sinRot = fastSin(timeRotation);
-    float cosRot = fastCos(timeRotation);
-    mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
-    
-    // First octave
-    amplitude *= PERSISTENCE * 3.2;
-    frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-    total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
-    
-    // Second octave (if needed)
-    if (octaves > 1) {
-        amplitude *= PERSISTENCE * 2.0;
-        frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-        total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
-    }
-    
-    // Apply final modulation
-    return total * (timeInfluence * 0.9 + u_baseModulation);
-}
+        float layeredNoise(vec2 p, float time) {
+            // Simplified to single layer with detail
+            float mainLayer = simplexNoise(p, time);
+            float detail = simplexNoise(p * 2.0, time * 0.3) * 0.3;
+            return mainLayer * 0.7 + detail * 0.3;
+        }
 
+        float fbmSimplexNoise(vec2 v, int octaves) {
+            if (octaves <= 0) return 0.0;
+            
+            const float PERSISTENCE = 0.001;
+            const float LACUNARITY = 0.0009;
+            const int MAX_OCTAVES = 2;
+            
+            float total = 0.0;
+            float amplitude = u_amplitude;
+            float frequency = u_initialFreq;
+            
+            // Apply initial offsets
+            v += u_nOS + vec2(u_nS);
+            
+            // Calculate base pattern with simplified domain warping
+            vec2 warpedCoord = domainWarp(v, u_time * 0.1);
+            float basePattern = layeredNoise(warpedCoord, u_time);
+            total = amplitude * basePattern;
+            
+            // Simplified time influence - single noise sample
+            float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
+            
+            // Only two octaves with simplified rotation
+            float timeRotation = u_time * 0.05;
+            // Precalculate sin/cos using fast approximations
+            float sinRot = fastSin(timeRotation);
+            float cosRot = fastCos(timeRotation);
+            mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
+            
+            // First octave
+            amplitude *= PERSISTENCE * 3.2;
+            frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+            total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
+            
+            // Second octave (if needed)
+            if (octaves > 1) {
+                amplitude *= PERSISTENCE * 2.0;
+                frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
+                total += amplitude * layeredNoise(rot * warpedCoord * frequency, u_time * 0.9);
+            }
+            
+            // Apply final modulation
+            return total * (timeInfluence * 0.9 + u_baseModulation);
+        }
 
         lowp vec3 getColorFromPalette(float t) {
             t = clamp(t, 0.0, 4.0) * 7.0;
@@ -302,62 +293,29 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             const vec3 LUM_WEIGHTS = vec3(0.333, 0.333, 0.334);
             float luminance = dot(color, LUM_WEIGHTS);
             
-            // Check if the color is monochromatic (all channels nearly equal)
-            float maxDiff = max(max(abs(color.r - color.g), abs(color.g - color.b)), abs(color.b - color.r));
-            bool isMonochrome = maxDiff < 0.05;
+            // Adjust enhancement based on background setting
+            float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04); // lower influence
+            vec3 boosted = color * (1.0 + (1.0 - luminance) * noiseInfluence);
             
-            if (isMonochrome) {
-                // Enhanced monochrome processing
-                float monoBoost = 1.0 + noiseValue * (u_isLightBackground ? 0.03 : 0.06);
-                vec3 boosted = color * monoBoost;
-                
-                // Enhance contrast for monochrome
-                float contrastPower = u_isLightBackground ? 0.92 : 0.88;
-                vec3 contrasted = pow(boosted, vec3(contrastPower));
-                
-                // Add subtle tonal variation
-                float variation = sin(luminance * 6.28318 + u_time * 0.1) * 0.02;
-                contrasted += vec3(variation);
-                
-                // Ensure we maintain monochrome
-                float finalLuminance = dot(contrasted, LUM_WEIGHTS);
-                return vec3(finalLuminance);
-            } else {
-                // Adjust enhancement based on muted colors setting
-                float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04); // lower influence
-                vec3 boosted = color * (1.0 + (1.0 - luminance) * noiseInfluence);
-                
-                // Adjust saturation based on background
-                //float saturationStrength = u_isLightBackground ? 1.5 : 2.0;  //1.1 : 1.2
-                float saturationStrength = u_isLightBackground ? 1.1 : 1.2; // lower influence
-                vec3 saturated = mix(
-                    vec3(luminance),
-                    boosted,
-                    vec3(saturationStrength)
-                );
-                
-                 float contrastPower = u_isLightBackground ? 0.95 : 0.92; // lower influence
+            // Adjust saturation based on background
+            float saturationStrength = u_isLightBackground ? 1.1 : 1.2; // lower influence
+            vec3 saturated = mix(
+                vec3(luminance),
+                boosted,
+                vec3(saturationStrength)
+            );
+            
+            float contrastPower = u_isLightBackground ? 0.95 : 0.92; // lower influence
             vec3 contrasted = pow(saturated, vec3(contrastPower));
             
-            //float highlightThreshold = u_isLightBackground ? 0.9 : 0.85;  //0.9 : 0.85
             float highlightThreshold = u_isLightBackground ? 0.95 : 0.92; // lower influence
             vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
-            //contrasted = mix(contrasted, highlights * 0.8, 0.2); // 0.8, 0.2
-            //contrasted = mix(contrasted, highlights * 0.9, 0.1); // lower influence
-            contrasted = mix(contrasted, highlights * 0.9, 0.6); // higer influence
+            contrasted = mix(contrasted, highlights * 0.9, 0.6); // higher influence
 
             // Final multiplier based on background
-            //float finalMultiplier = u_isLightBackground ? 0.9 : 1.1;  //0.9 : 1.1
             float finalMultiplier = u_isLightBackground ? 0.95 : 1.05; // lower influence
             return contrasted * finalMultiplier;
-            }
         }
-        //VAR WITHOUT ENHANCEMENT////////////////////////////////
-        //lowp vec3 enhanceColor(vec3 color, float noiseValue) {
-            // Return the original color with no enhancement
-            //return color;
-        //}
-        //////////////////////////////////////////////////////////////
 
         lowp vec3 blendColors(lowp vec3 a, lowp vec3 b, lowp float factor) {
             // Screen blend can use low precision
@@ -430,24 +388,47 @@ float fbmSimplexNoise(vec2 v, int octaves) {
         lowp vec4 getCASettings(float seed, float iter) {
             // Use seed and iteration to select pattern type
             float patternSeed = fract(seed * 12345.6789 + iter * 789.123);
+            
+            // Select one of four patterns based on the seed
             int patternType = int(mod(patternSeed * 4.0, 4.0));
             
             // Return vec4(dirBiasStrength, surviveThreshold, birthThreshold, edgeThreshold)
             if (patternType == 0) {
-                // Organic, flowing patterns - more defined
-                return vec4(0.3, 1.5, 2.5, 0.4);
+                // Organic, flowing patterns
+                return vec4(
+                    0.4,    // dirBias strength
+                    1.3,    // surviveThreshold base
+                    2.3,    // birthThreshold base
+                    0.35    // edgeThreshold base
+                );
             } else if (patternType == 1) {
-                // Geometric, crystalline patterns - stronger edges
-                return vec4(0.2, 1.8, 2.8, 0.6);
+                // Geometric, crystalline patterns
+                return vec4(
+                    0.15,   // dirBias strength
+                    1.6,    // surviveThreshold base
+                    2.7,    // birthThreshold base
+                    0.5     // edgeThreshold base
+                );
             } else if (patternType == 2) {
-                // Chaotic, detailed patterns - more structured
-                return vec4(0.25, 1.6, 2.4, 0.5);
+                // Chaotic, detailed patterns
+                return vec4(
+                    0.3,    // dirBias strength
+                    1.7,    // surviveThreshold base
+                    2.2,    // birthThreshold base
+                    0.45    // edgeThreshold base
+                );
             } else {
-                // Symmetric patterns - more balanced
-                return vec4(0.15, 1.7, 2.6, 0.55);
+                // Symmetric patterns
+                return vec4(
+                    0.25,   // dirBias strength
+                    1.5,    // surviveThreshold base
+                    2.5,    // birthThreshold base
+                    0.4     // edgeThreshold base
+                );
             }
         }
 
+        // Then modify getGlyphPattern to use these settings
         lowp float getGlyphPattern(vec2 cell, float depth, float seed, vec2 normalizedPos) {
             // Use cellular grid position for scaling with more stable transitions
             vec2 gridPos = floor(cell / 4.0) * 4.0;
@@ -457,19 +438,6 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             // More stable noise calculation with reduced variation
             float stabilityNoise = noise(floor(cell / 8.0) * 8.0, seed) * 0.2; // Reduced from 0.3
             float scaleVariation = 1.0 + (smoothGrid * 0.3 + stabilityNoise) * u_caScaleVariation * 0.5;
-            
-            // Mouse influence calculation - reduced influence
-            if (u_mouseActive) {
-                vec2 approxWorldPos = cell * u_cellSize * 0.5;
-                float mouseDistance = length(approxWorldPos - u_mouse);
-                float mouseInfluenceRadius = u_mouseInfluenceRadius * 0.75 * u_cellSize;
-                
-                if (mouseDistance < mouseInfluenceRadius) {
-                    float normalizedDist = mouseDistance / mouseInfluenceRadius;
-                    float mouseFactor = (1.0 - normalizedDist * normalizedDist * (3.0 - 2.0 * normalizedDist)) * 0.2; // Reduced from 0.3
-                    scaleVariation += mouseFactor * 0.15 * u_mouseInfluenceRadius / 10.0; // Reduced from 0.2
-                }
-            }
             
             // Pre-calculate scaled cell position with reduced variation
             vec2 scaledCell = floor(cell * scaleVariation * 1.8) * 0.5; // Reduced from 2.0
@@ -523,7 +491,7 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                         step(neighbors, surviveThreshold + 1.1) * state + 
                         step(caSettings.z - 0.1, neighbors) * 
                         step(neighbors, caSettings.z + 0.1) * (1.0 - state);
-            } else {
+                } else {
                 float edgeThreshold = caSettings.w + cos(radius) * 0.1;
                 state = step(edgeThreshold, abs(neighbors - 2.0 - dirBias));
             }
@@ -548,61 +516,6 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             return finalPattern;
         }
 
-        // Add HSL conversion functions before main()
-        float hue2rgb(float p, float q, float t) {
-            if (t < 0.0) t += 1.0;
-            if (t > 1.0) t -= 1.0;
-            if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
-            if (t < 1.0/2.0) return q;
-            if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
-            return p;
-        }
-
-        vec3 rgb2hsl(vec3 color) {
-            float maxColor = max(max(color.r, color.g), color.b);
-            float minColor = min(min(color.r, color.g), color.b);
-            float delta = maxColor - minColor;
-            
-            float h = 0.0;
-            float s = 0.0;
-            float l = (maxColor + minColor) / 2.0;
-            
-            if (delta > 0.0) {
-                s = l < 0.5 ? delta / (maxColor + minColor) : delta / (2.0 - maxColor - minColor);
-                
-                if (maxColor == color.r) {
-                    h = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
-                } else if (maxColor == color.g) {
-                    h = (color.b - color.r) / delta + 2.0;
-                } else {
-                    h = (color.r - color.g) / delta + 4.0;
-                }
-                h /= 6.0;
-            }
-            
-            return vec3(h, s, l);
-        }
-        
-        vec3 hsl2rgb(vec3 hsl) {
-            float h = hsl.x;
-            float s = hsl.y;
-            float l = hsl.z;
-            
-            float r, g, b;
-            
-            if (s == 0.0) {
-                r = g = b = l; // Achromatic
-            } else {
-                float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
-                float p = 2.0 * l - q;
-                r = hue2rgb(p, q, h + 1.0/3.0);
-                g = hue2rgb(p, q, h);
-                b = hue2rgb(p, q, h - 1.0/3.0);
-            }
-            
-            return vec3(r, g, b);
-        }
-
         void main() {
             // Constants can use low precision
             const lowp int MAX_LOOP_DEPTH = 6;
@@ -622,7 +535,7 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             // Pattern vectors can use low precision since normalized
             lowp vec2 expPattern, stepPattern, circularPattern, squarePattern, flowPattern, smoothFlowPattern;
             
-            // Pattern 1: Exponential waves - simplified for clearer forms
+            // Pattern 1: Exponential waves
             expPattern = vec2(
                 exp(-abs(mod(distortNoise1 + gridDistortTime, 2.0) - 1.0)) - 0.5,
                 exp(-abs(mod(distortNoise2 + gridDistortTime, 2.0) - 1.0)) - 0.5
@@ -667,9 +580,9 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             // Add progressive movement (modified for more organic flow)
             float flowTime = gridDistortTime * 0.05;
             smoothFlowPattern += vec2(
-                simplexNoise(vec2(flowTime * 0.7, 0.0), u_nS),
-                simplexNoise(vec2(flowTime * 0.8, 1.0), u_nS)
-            ) * 0.15;
+                simplexNoise(vec2(flowTime * 0.7, 0.0), 0.0) * 0.15,
+                simplexNoise(vec2(flowTime * 0.8, 1.0), 0.0) * 0.15
+            );
             
             // Select pattern based on uniform
             vec2 finalPattern;
@@ -693,86 +606,28 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                 finalPattern = squarePattern;
             }
             
-            // Apply grid distortion with randomized strength
+            // Apply grid distortion only if enabled
             mediump vec2 gridOffset = vec2(0.0);
-            
-            // Generate a pseudorandom value for this specific position and time
-            float distortionRandom = fract(sin(dot(coord + vec2(gridDistortTime), vec2(12.9898, 78.233))) * 43758.5453);
-            
-            // Random chance to apply distortion (30% probability)
-            if (distortionRandom < 0.3) {
-                // Apply different strengths based on randomness
-                float randomStrength = 0.5 + distortionRandom * 1.5; // Varies from 0.5 to 2.0
-                gridOffset = finalPattern * u_sortStrength * u_cellSize * randomStrength;
-                
-                // Apply randomized wave effect
-                float waveFreq = 0.5 + distortionRandom * 1.0; // Varies from 0.5 to 1.5
-                coord += gridOffset * (1.0 + sin(gridDistortTime * waveFreq) * 0.3);
+            if (u_enableGridDistort) {
+                gridOffset = finalPattern * u_sortStrength * u_cellSize;
+                // Apply distortion to coordinates before grid calculation
+                coord += gridOffset * (1.0 + sin(gridDistortTime) * 0.3);
             }
             
             vec2 gridCoord = floor(coord / u_cellSize);
             vec2 cellCenter = (gridCoord + 0.5) * u_cellSize;
             vec2 localPos = coord - cellCenter;
 
-            // Cell boundary check can use lower precision
-            lowp float cellBoundary = u_cellSize * 0.485;
-            lowp float edgeFade = 0.005;
-            
-            // Get flow direction and cellular automata state for current cell
-            vec2 flowDir = getFlowDirection(cellCenter, u_time);
-            float flowAngle = atan(flowDir.y, flowDir.x);
-            
-            // Use cellular automata state to determine cell shape
-            // This uses the same CA logic as in getFlowDirection function
-            float cellSize = 100.0;
-            vec2 caCoord = floor(cellCenter / cellSize);
-            
-            // Generate stable CA state for current cell
-            float caState = fract(sin(dot(caCoord, vec2(12.9898, 78.233))) * 43758.5453);
-            
-            // Get neighboring cell states for more context
-            float topState = fract(sin(dot(caCoord + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float rightState = fract(sin(dot(caCoord + vec2(1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float bottomState = fract(sin(dot(caCoord + vec2(0.0, -1.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float leftState = fract(sin(dot(caCoord + vec2(-1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
-            
-            // Calculate cellular automata patterns
-            float slowTime = u_time * u_sortAnimSpeed * 0.05;
-            float timeVaryingState = sin(caState * 10.0 + slowTime);
-            
-            // Create a CA rule: cells become round when they are "active" in the automata
-            // This creates a more interesting pattern than just thresholding the CA state
-            float neighborSum = topState + rightState + bottomState + leftState;
-            float caRuleValue = (neighborSum > 2.0 && timeVaryingState > 0.0) || timeVaryingState > 0.7 ? 1.0 : 0.0;
-            
-            // Add some random variation for more organic distribution
-            float randomFactor = fract(sin(dot(gridCoord, vec2(43.9898, 38.233))) * 53758.5453);
-            bool isRoundCell = (caRuleValue > 0.5) || (randomFactor > 0.95 && timeVaryingState > 0.0);
-            
-            // Check boundary based on cell shape
-            bool isWithinCell;
-            if (isRoundCell) {
-                // Round cell boundary check
-                isWithinCell = length(localPos) <= cellBoundary;
-            } else {
-                // Square cell boundary check (original)
-                isWithinCell = all(lessThanEqual(abs(localPos), vec2(cellBoundary)));
-            }
-            
-            if (!isWithinCell) {
-                // Smooth edge transition based on cell shape
-                float fadeAlpha;
-                if (isRoundCell) {
-                    // Round cell edge fade
-                    float edgeDistance = length(localPos) - cellBoundary;
-                    fadeAlpha = 1.0 - smoothstep(0.0, edgeFade, edgeDistance);
-                } else {
-                    // Square cell edge fade (original)
-                    vec2 edgeDistance = abs(localPos) - vec2(cellBoundary);
-                    fadeAlpha = 1.0 - smoothstep(0.0, edgeFade, max(edgeDistance.x, edgeDistance.y));
-                }
-                if (fadeAlpha <= 0.0) discard;
-            }
+        // Cell boundary check can use lower precision
+        lowp float cellBoundary = u_cellSize * 0.485;
+        lowp float edgeFade = 0.005;
+        bool isWithinCell = all(lessThanEqual(abs(localPos), vec2(cellBoundary)));
+        if (!isWithinCell) {
+            // Smooth edge transition
+            vec2 edgeDistance = abs(localPos) - vec2(cellBoundary);
+            float fadeAlpha = 1.0 - smoothstep(0.0, edgeFade, max(edgeDistance.x, edgeDistance.y));
+            if (fadeAlpha <= 0.0) discard;
+        }
 
             // Pre-calculate values needed for the depth loop
             float distToCenter = length(coord - cellCenter);
@@ -848,6 +703,10 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             float edge0 = 0.2 + sin(u_time * 0.0002) * 0.3;
             float edge1 = 0.8 + cos(u_time * 0.0002) * 0.5;
             
+            // Get flow direction for current cell
+            vec2 flowDir = getFlowDirection(cellCenter, u_time);
+            float flowAngle = atan(flowDir.y, flowDir.x);
+            
             // Process each depth level with minimal branching
             for (int depth = 0; depth < MAX_LOOP_DEPTH; depth++) {
                 // Break condition at the top to avoid unnecessary loop iterations
@@ -922,7 +781,7 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                 // Add to final color with optimized alpha blending
                 float alphaFactor = 1.0 - depthNoiseValue * 0.7;
                 if (alphaFactor > 0.01) { // Skip negligible contributions
-                    color.rgb *= 1.0;
+                color.rgb *= 1.0;
                     color += vec4(blendedColor, 1.0) * alphaFactor;
                 }
             }
@@ -932,21 +791,38 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                 color = u_baseColor;
             }
             
-            // Add mouse circle visualization before finalizing the color
-            if (u_mouseActive) {
-                // Calculate distance from current pixel to mouse position
-                float mouseDistance = length(coord - u_mouse);
-                
-                // Create a larger circle with 10 cell size diameter
-                float circleRadius = u_cellSize * 10.0; // Increased to 10 cells
-            }
-            
             gl_FragColor = color;
         }
     </script>
 
     <script>
-        // Configuration
+        let bS = 1.0;     
+        const cV = 6;  
+        let tS;
+        let dM = 0;
+        let cS;      
+        let bN = 0.002;  
+        let nS;
+        let fS = 0.005;
+        let rSS;
+        let roA;
+        let nOX, nOY;
+        let scF = 30;
+        let tX = 0, tY = 0;
+        let iTX = 0, iTY = 0;
+        let pMX, pMY;
+        let amV = [0.1, 0.075, 0.05]; 
+        let isP = true;
+        let stT = 0;
+        let cuT = 0;
+        let lum = 1.5;
+        let vib = 2.5;
+        let soS = 0.1;     
+        let soF = 0.1;   
+        let soA = 0.15;     
+        let cuP;                  
+
+        // Add performance monitoring system
         const TARGET_FRAMERATE = 60; // Target frame rate (can be lowered for better performance)
         let lastFrameTime = 0;      // For frame rate control
         let currentFPS = 60;        // Track current FPS
@@ -959,64 +835,105 @@ float fbmSimplexNoise(vec2 v, int octaves) {
         let currentPixelDensity;         // Track current pixel density
         let lastPixelDensityChange = 0;  // Track when we last changed pixel density
         const MIN_DENSITY_CHANGE_INTERVAL = 5000; // Minimum time between density changes (5 seconds)
+        let canvasElement;               // Reference to canvas element
+        let glContext;                   // Cached reference to WebGL context
         
-        let bS = 1.0;     
-        const cV = 6;  
-        let tS;
-        let dM = 0;
-        let cS;      
-        let bN = 0.002;  
-        let nS;
-        let fS = 0.005;
-        let rSS;
-        let roA;
-        let nOX, nOY;
-        let scF = 25;
-        let tX = 0, tY = 0;
-        let iTX = 0, iTY = 0;
-        let pMX, pMY;
-        let amV = [0.1, 0.075, 0.05]; 
-        let isP = false; // Start paused
-        let stT = 0;
-        let cuT = 0;
-        let lastPausedTime = 0; // Initialize paused time to 0
-        let lum = 1.5;
-        let vib = 2.5;
-        let soS = 0.1;     
-        let soF = 0.1;   
-        let soA = 0.15;     
-        let cuP;                  
+        // Pre-allocate arrays for better memory management
+        const PREALLOCATED_ARRAY_SIZE = 1000;
+        const recordingChunkPool = [];   // Pool of pre-allocated chunks for recording
+        let recordingChunkIndex = 0;     // Current index in the recording chunk pool
         
-        // Add mouse tracking variables
-        let mouseX = 0, mouseY = 0;
-        let panMouseX = 0, panMouseY = 0; // Add separate variables for panning
-        let isMouseOnCanvas = false;
-        let mouseInfluenceFactor = 0.0; // Add fade-in factor for mouse influence
-        const MOUSE_INFLUENCE_FADE_SPEED = 0.15; // Speed of fade-in/out
+        // Memory management flags
+        let isMemoryCleanupScheduled = false;
+        const MEMORY_CLEANUP_INTERVAL = 30000; // Run memory cleanup every 30 seconds
+        let lastMemoryCleanup = 0;
+        let isTabVisible = true; // Track tab visibility for better performance
 
-        // Add trail system
-        const MAX_TRAIL_POINTS = 20; // Maximum number of trail points to store
-        const MIN_DISTANCE = 5; // Minimum distance between trail points
-        const TRAIL_LIFETIME = 3000; // Time in ms before a trail point disappears
-        let trailPoints = []; // Array to store trail points [{x, y, time}]
-        
-        // Cache canvas element reference
-        let canvasElement;
-        
-        let tog = {
+        // Handle visibility changes to pause rendering when tab not active
+        function handleVisibilityChange() {
+            isTabVisible = document.visibilityState === 'visible';
+            
+            if (isTabVisible) {
+                // Reset frame time tracking to avoid jumps
+                lastFrameTime = performance.now();
+                // Restart animation if paused
+                if (isP) {
+                    requestAnimationFrame(draw);
+                }
+            }
+            
+            // Take opportunity to clean up memory when tab is hidden
+            if (!isTabVisible && !isMemoryCleanupScheduled) {
+                performMemoryCleanup();
+            }
+        }
+
+        // Memory management function that optimizes memory use
+        function performMemoryCleanup() {
+            isMemoryCleanupScheduled = true;
+            
+            // Use setTimeout to defer heavy operations until the tab is idle
+            setTimeout(() => {
+                // Clear any unused recording chunks
+                if (Array.isArray(reCN) && reCN.length > 0) {
+                    // Keep only chunks that are actually in use
+                    if (!isR) {
+                        reCN.length = 0;
+                    }
+                }
+                
+                // Reset preallocated arrays to reduce memory fragmentation
+                recordingChunkIndex = 0;
+                
+                // Force garbage collection on WebGL if possible
+                if (glContext) {
+                    // Attempt to reduce GL memory usage by reducing texture size temporarily
+                    // This will be restored on next draw
+                    const tempDensity = pixelDensity();
+                    if (tempDensity > 1) {
+                        pixelDensity(1);
+                        clear();
+                        pixelDensity(tempDensity);
+                    }
+                }
+                
+                lastMemoryCleanup = performance.now();
+                isMemoryCleanupScheduled = false;
+                
+                // If tab visible, request a frame to restore rendering
+                if (isTabVisible && isP) {
+                    requestAnimationFrame(draw);
+                }
+            }, 100);
+        }
+
+        // Cached uniform values to prevent redundant updates
+        const cachedUniforms = {
+            bS: null,
+            scaleFactor: null,
+            translation: [null, null],
+            resolution: [null, null],
+            time: null,
+            cellSize: null,
+            flowSpeed: null,
+            luminosity: null,
+            vibrancy: null,
+            sortStrength: null,
+            sortFrequency: null,
+            sortAnimSpeed: null,
+            currentPattern: null,
+            noiseScale: null,
+            caScaleVariation: null
         };
 
         let inscription_id = window.location.pathname.split("/").pop();
         
-        // DEVELOPMENT CODE - REMOVE BEFORE PRODUCTION DEPLOYMENT
-        // This code generates a random inscription ID for testing
-        // ===================================================
+        // REMOVE AFTER TESTING!!!
             let chars = "0123456789abcdefghijklmnopqrstuvwsyz";
             inscription_id = new URLSearchParams(window.location.search).get("seed") || Array(64).fill(0).map(_=>chars[(Math.random()*chars.length)|0]).join('');
-        // ===================================================
+        // REMOVE AFTER TESTING!!!
 
-        // Debug logging - uncomment if needed for debugging
-        // console.log('Inscription ID:', inscription_id)
+
 
         class Rnd{
             constructor(seed) {
@@ -1033,208 +950,190 @@ float fbmSimplexNoise(vec2 v, int octaves) {
 
 
         function upTC() {
-            let viW = width / scF;
-            let viH = height / scF;
+            // Calculate visible area size
+            let viW, viH;
             
-            // Calculate the relative position from the center
-            let relX = (tX + width/2) / (width/scF);
-            let relY = (tY + height/2) / (height/scF);
+            if (ADAPTIVE_RESOLUTION.ENABLED) {
+                // When using adaptive resolution, calculate with display dimensions
+                const displayRatio = currentResolutionScale;
+                viW = (width / displayRatio) / scF;
+                viH = (height / displayRatio) / scF;
+            } else {
+                viW = width / scF;
+                viH = height / scF;
+            }
             
-            // Apply the relative position with the new scale
-            tX = -width/2 + (relX * width/scF);
-            tY = -height/2 + (relY * height/scF);
+            tX = -width/2 + (viW * scF/2);
+            tY = -height/2 + (viH * scF/2);
+        }
+        
+        // Function to detect system capabilities for better default settings
+        function detectDeviceCapabilities() {
+            // User agent detection for device type
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isTablet = /iPad|tablet|Nexus 7|Nexus 10/i.test(navigator.userAgent);
+            
+            // GPU detection through WebGL
+            let gpuInfo = "unknown";
+            let isLowEndDevice = false;
+            
+            if (glContext) {
+                const debugInfo = glContext.getExtension('WEBGL_debug_renderer_info');
+                if (debugInfo) {
+                    const renderer = glContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                    gpuInfo = renderer;
+                    
+                    // Check for low-end GPUs or integrated graphics
+                    const lowerRenderer = renderer.toLowerCase();
+                    isLowEndDevice = lowerRenderer.includes('intel') || 
+                                     lowerRenderer.includes('hd graphics') ||
+                                     lowerRenderer.includes('mali') ||
+                                     lowerRenderer.includes('adreno') ||
+                                     isMobile;
+                }
+            }
+            
+            // Adjust resolution settings based on detected capabilities
+            if (ADAPTIVE_RESOLUTION.ENABLED) {
+                if (isLowEndDevice || isMobile) {
+                    // Lower quality for mobile and low-end devices
+                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.4;
+                    ADAPTIVE_RESOLUTION.MAX_SCALE = 0.8;
+                    ADAPTIVE_RESOLUTION.TARGET_FPS = 40;
+                    
+                    // Start with lower resolution
+                    if (currentResolutionScale > 0.6) {
+                        applyResolutionScale(0.6);
+                    }
+                } else if (isTablet) {
+                    // Medium quality for tablets
+                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.5;
+                    ADAPTIVE_RESOLUTION.MAX_SCALE = 0.9;
+                    ADAPTIVE_RESOLUTION.TARGET_FPS = 45;
+                    
+                    // Start with medium resolution
+                    if (currentResolutionScale > 0.75) {
+                        applyResolutionScale(0.75);
+                    }
+                } else {
+                    // Higher quality for desktops
+                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.6;
+                    ADAPTIVE_RESOLUTION.MAX_SCALE = 1.0;
+                    ADAPTIVE_RESOLUTION.TARGET_FPS = 50;
+                }
+            }
+            
+            // For pixel density-based quality approach, adjust based on device capabilities
+            if (!ADAPTIVE_RESOLUTION.ENABLED && isLowEndDevice) {
+                currentPixelDensity = 1.0;
+                pixelDensity(currentPixelDensity);
+            }
+            
+            // Log device information
+            console.log(`Device detected: ${isMobile ? 'Mobile' : isTablet ? 'Tablet' : 'Desktop'}`);
+            console.log(`GPU: ${gpuInfo}`);
+            console.log(`Performance mode: ${isLowEndDevice ? 'Low-end' : 'High-end'}`);
+            
+            return {
+                isMobile,
+                isTablet,
+                isLowEndDevice,
+                gpuInfo
+            };
+        }
+
+        function geT() {
+            const d = new Date();
+            const pad = n => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
         }
 
         function preload() {
+            // Only initialize shader once for better performance
+            if (!tS) {
             let vertexShader = document.getElementById('vertex-shader').textContent;
             let fragmentShader = document.getElementById('fragment-shader').textContent;
             tS = createShader(vertexShader, fragmentShader);
+            }
         }
 
         function suEH() {
-           
-            const canvas = document.querySelector('canvas');
+            // Cache canvas reference
+            const canvas = canvasElement;
             
-            // Add mouse event listeners for panning
-            let isDragging = false;
-            let startX, startY;
-            let startTX, startTY;
+            // Event listener references for proper cleanup
+            const eventListeners = {
+                keydown: null,
+                keyup: null,
+                mousedown: null,
+                mousemove: null,
+                mouseup: null,
+                touchstart: null,
+                touchmove: null,
+                touchend: null,
+                visibilitychange: null,
+                resize: null
+            };
             
-            canvas.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                startTX = tX;
-                startTY = tY;
-                canvas.style.cursor = 'grabbing';
-            });
+            // Throttling variables for mousemove/touchmove
+            let lastMoveTime = 0;
+            const MOVE_THROTTLE = 16; // ~ 60fps
             
-            canvas.addEventListener('mousemove', (e) => {
-                if (isDragging) {
-                    // Apply the translation directly in shader space
-                    const dx = -(e.clientX - startX);
-                    const dy = (e.clientY - startY);
-                    tX = startTX + dx*8;
-                    tY = startTY + dy*8;
-                }
-            });
-            
-            canvas.addEventListener('mouseup', () => {
-                isDragging = false;
-                canvas.style.cursor = 'grab';
-            });
-            
-            canvas.addEventListener('mouseleave', () => {
-                isDragging = false;
-                canvas.style.cursor = 'grab';
-            });
-            
-            // Add touch event handling for mobile devices
-            let touchStartX, touchStartY;
-            let touchStartTX, touchStartTY;
-            
-            canvas.addEventListener('touchstart', (e) => {
-                // Get the first touch point
-                const touch = e.touches[0];
-                
-                // Store initial touch position and translation
-                touchStartX = touch.clientX;
-                touchStartY = touch.clientY;
-                touchStartTX = tX;
-                touchStartTY = tY;
-                
-                // Set dragging state
-                isDragging = true;
-                canvas.style.cursor = 'grabbing';
-                
-                // Prevent default touch behavior to avoid scrolling
-                e.preventDefault();
-            }, { passive: false });
-            
-            canvas.addEventListener('touchmove', (e) => {
-                if (isDragging) {
-                    // Get the first touch point
-                    const touch = e.touches[0];
-                    
-                    // Calculate the translation
-                    const dx = -(touch.clientX - touchStartX);
-                    const dy = (touch.clientY - touchStartY);
-                    
-                    // Apply the translation
-                    tX = touchStartTX + dx*8;
-                    tY = touchStartTY + dy*8;
-                    
-                    // Prevent default touch behavior
-                    e.preventDefault();
-                }
-            }, { passive: false });
-            
-            // Combined touchend handler for both panning and double-tap
+            // Touch event tracking
             let lastTap = 0;
             let lastTapX = 0;
             let lastTapY = 0;
             let tapCount = 0;
             let tapTimeout = null;
             
-            canvas.addEventListener('touchend', (e) => {
-                const currentTime = new Date().getTime();
-                const currentX = e.changedTouches[0].clientX;
-                const currentY = e.changedTouches[0].clientY;
-                
-                // Check if this is a tap (not a drag)
-                const isTap = Math.abs(currentX - touchStartX) < 10 && 
-                            Math.abs(currentY - touchStartY) < 10;
-                
-                if (isTap) {
-                    const tapLength = currentTime - lastTap;
-                    const tapDistance = Math.sqrt(
-                        Math.pow(currentX - lastTapX, 2) + 
-                        Math.pow(currentY - lastTapY, 2)
-                    );
-                    
-                    // Clear any existing timeout
-                    if (tapTimeout) {
-                        clearTimeout(tapTimeout);
-                    }
-                    
-                    // Increment tap count if within time and distance constraints
-                    if (tapLength < 500 && tapLength > 0 && tapDistance < 50) {
-                        tapCount++;
-                        
-                        // Handle different tap counts
-                        if (tapCount === 2) {
-                            // Double tap - toggle pause
-                            isP = !isP;
-                            if (isP) {
-                                stT = millis() - (lastPausedTime * 1000);
-                            } else {
-                                lastPausedTime = cuT;
-                            }
-                        } else if (tapCount === 3) {
-                            // Triple tap - toggle scale factor (control D)
-                            if (scF === 25) {
-                                scF = 12;
-                            } else {
-                                scF = 25;
-                            }
-                            upTC();
-                            tapCount = 0; // Reset tap count after triple tap
-                        }
-                    } else {
-                        // Reset tap count if too much time or distance between taps
-                        tapCount = 1;
-                    }
-                    
-                    // Set timeout to reset tap count if no more taps
-                    tapTimeout = setTimeout(() => {
-                        tapCount = 0;
-                    }, 500);
-                    
-                    lastTap = currentTime;
-                    lastTapX = currentX;
-                    lastTapY = currentY;
-                }
-                
-                // Reset dragging state
-                isDragging = false;
-                canvas.style.cursor = 'grab';
-            });
-            
-            canvas.addEventListener('touchcancel', () => {
-                isDragging = false;
-                canvas.style.cursor = 'grab';
-            });
-            
-            // Set initial cursor style
-            canvas.style.cursor = 'grab';
-            
+            // Key state with Set for faster lookups
             const keyState = new Set();
             
-            document.addEventListener('keydown', (e) => {
-                
+            // Mouse/touch state
+            let isDragging = false;
+            let startX, startY;
+            let startTX, startTY;
+            
+            // Clean up old event listeners if they exist
+            function cleanupEventListeners() {
+                // Remove existing listeners if they were created before
+                for (const [type, handler] of Object.entries(eventListeners)) {
+                    if (handler) {
+                        if (type === 'resize') {
+                            window.removeEventListener(type, handler);
+                        } else if (type.startsWith('touch')) {
+                            canvas.removeEventListener(type, handler, { passive: false });
+                        } else {
+                            document.removeEventListener(type, handler);
+                        }
+                    }
+                }
+            }
+            
+            // Optimized key event handler
+            function handleKeyDown(e) {
                 if (keyState.has(e.key)) return;
                 keyState.add(e.key);
                 
                 switch(e.key.toLowerCase()) {
                     case 'a':
-                        dM = (dM + 1) % 4;  // Changed from % 3 to % 4 to include the new case 3
-                        upCS();
+                        dM = (dM + 1) % 3;
+                        requestAnimationFrame(upCS);
                         break;
                         
                     case 'r':
                         tX = iTX;
                         tY = iTY;
+                        scF = 30;
                         upTC();
                         break;
                         
                     case 's':
                         isP = !isP;
                         if (isP) {
-                            // When starting/resuming animation
-                            stT = millis() - (lastPausedTime * 1000); // Adjust start time to account for paused time
+                            stT = millis() * 0.1;
                         } else {
-                            // When pausing animation
-                            lastPausedTime = cuT; // Store current time
+                            cuT = (millis() - stT) / 1000.0;
                         }
                         break;
                         
@@ -1245,31 +1144,26 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                             const cuD = pixelDensity();
                             const nwD = e.key === '1' ? 4 : (e.key === '2' ? 5 : 5.5);
                             
-                            
                             pixelDensity(nwD);
                             draw();
-                            
                            
                             const tiS = geT();
                             const prefix = e.key === '1' ? 'shader_' : 'shader_hires_';
                             saveCanvas(prefix + tiS, 'png');
                             
-                           
                             pixelDensity(cuD);
                             draw();
                             break;  
                         }
-                         
-                    case 'd':
                         
-                        if (scF === 25) {
-                            scF = 12;
+                    case 'd':
+                        if (scF === 30) {
+                            scF = 10;
                         } else {
-                            scF = 25;
+                            scF = 30;
                         }
                         upTC();
                         break;
-                        
                     
                     case 'k':
                         if (!isR) {
@@ -1279,18 +1173,197 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                         }
                         break;
                 }
-            });
+            }
             
-            document.addEventListener('keyup', (e) => {
+            function handleKeyUp(e) {
                 keyState.delete(e.key);
-            });
-        }
-
-        
-        function geT() {
-            const d = new Date();
-            const pad = n => n.toString().padStart(2, '0');
-            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+            }
+            
+            // Optimized mouse event handlers with throttling
+            function handleMouseDown(e) {
+                if (e.button !== 0) return; // Only handle left mouse button
+                
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startTX = tX;
+                startTY = tY;
+                
+                // Apply cursor style once
+                canvas.style.cursor = 'grabbing';
+                
+                // Prevent text selection while dragging
+                e.preventDefault();
+            }
+            
+            function handleMouseMove(e) {
+                // Throttle move events
+                const now = performance.now();
+                if (isDragging && now - lastMoveTime > MOVE_THROTTLE) {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    
+                    // Apply translation directly with optimized calculation
+                    tX = startTX - dx * (scF / 15);
+                    tY = startTY + dy * (scF / 15);
+                    
+                    lastMoveTime = now;
+                }
+            }
+            
+            function handleMouseUp(e) {
+                if (isDragging) {
+                    isDragging = false;
+                    canvas.style.cursor = 'grab';
+                }
+            }
+            
+            // Touch event handlers with optimization
+            function handleTouchStart(e) {
+                if (e.touches.length !== 1) return;
+                
+                const touch = e.touches[0];
+                const currentTime = performance.now();
+                
+                isDragging = true;
+                startX = touch.clientX;
+                startY = touch.clientY;
+                startTX = tX;
+                startTY = tY;
+                
+                // Double/triple tap detection
+                const tapDistance = Math.sqrt(
+                    Math.pow(touch.clientX - lastTapX, 2) + 
+                    Math.pow(touch.clientY - lastTapY, 2)
+                );
+                
+                // Clear any existing timeout
+                if (tapTimeout) {
+                    clearTimeout(tapTimeout);
+                }
+                
+                // Check if this is a quick consecutive tap
+                if (currentTime - lastTap < 300 && tapDistance < 30) {
+                    tapCount++;
+                    
+                    if (tapCount === 2) {
+                        // Double tap - toggle pause
+                        isP = !isP;
+                        if (isP) {
+                            stT = millis() * 0.1;
+                        } else {
+                            cuT = (millis() - stT) / 1000.0;
+                        }
+                        isDragging = false; // Prevent drag after double tap
+                    } else if (tapCount === 3) {
+                        // Triple tap - change scale
+                        if (scF === 30) {
+                            scF = 10;
+                        } else {
+                            scF = 30;
+                        }
+                        upTC();
+                        tapCount = 0;
+                        isDragging = false; // Prevent drag after triple tap
+                    }
+                } else {
+                    // First tap of potential sequence
+                    tapCount = 1;
+                }
+                
+                // Update tap tracking
+                lastTap = currentTime;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+                
+                // Set timeout to reset tap counter if no more taps happen
+                tapTimeout = setTimeout(() => {
+                    tapCount = 0;
+                }, 300);
+                
+                // Prevent default to avoid scrolling
+                e.preventDefault();
+            }
+            
+            function handleTouchMove(e) {
+                if (!isDragging || e.touches.length !== 1) return;
+                
+                // Throttle move events
+                const now = performance.now();
+                if (now - lastMoveTime > MOVE_THROTTLE) {
+                    const touch = e.touches[0];
+                    const dx = touch.clientX - startX;
+                    const dy = touch.clientY - startY;
+                    
+                    // Apply optimized translation
+                    tX = startTX - dx * (scF / 15);
+                    tY = startTY + dy * (scF / 15);
+                    
+                    lastMoveTime = now;
+                }
+                
+                // Prevent default to avoid scrolling
+                e.preventDefault();
+            }
+            
+            function handleTouchEnd(e) {
+                isDragging = false;
+                
+                // Don't reset tap state here, as we want to track multi-taps
+                // But ensure we prevent default for consistency
+                e.preventDefault();
+            }
+            
+            // Optimized resize handler using RAF for better performance
+            function handleResize() {
+                if (reTO) {
+                    clearTimeout(reTO);
+                    reTO = null;
+                }
+                
+                reTO = setTimeout(() => {
+                    requestAnimationFrame(upCS);
+                }, 100);
+            }
+            
+            // Clean up existing event listeners
+            cleanupEventListeners();
+            
+            // Set up event listeners with proper options
+            eventListeners.keydown = handleKeyDown;
+            eventListeners.keyup = handleKeyUp;
+            eventListeners.mousedown = handleMouseDown;
+            eventListeners.mousemove = handleMouseMove;
+            eventListeners.mouseup = handleMouseUp;
+            eventListeners.touchstart = handleTouchStart;
+            eventListeners.touchmove = handleTouchMove;
+            eventListeners.touchend = handleTouchEnd;
+            eventListeners.resize = handleResize;
+            eventListeners.visibilitychange = handleVisibilityChange;
+            
+            // Add event listeners with appropriate options
+            document.addEventListener('keydown', eventListeners.keydown);
+            document.addEventListener('keyup', eventListeners.keyup);
+            
+            // Mouse events on document to catch cursor movement outside canvas
+            document.addEventListener('mousedown', eventListeners.mousedown);
+            document.addEventListener('mousemove', eventListeners.mousemove);
+            document.addEventListener('mouseup', eventListeners.mouseup);
+            
+            // Touch events need { passive: false } to prevent scrolling
+            canvas.addEventListener('touchstart', eventListeners.touchstart, { passive: false });
+            canvas.addEventListener('touchmove', eventListeners.touchmove, { passive: false });
+            canvas.addEventListener('touchend', eventListeners.touchend, { passive: false });
+            
+            // Window events
+            window.addEventListener('resize', eventListeners.resize);
+            document.addEventListener('visibilitychange', eventListeners.visibilitychange);
+            
+            // Initialize cursor style
+            canvas.style.cursor = 'grab';
+            
+            // Return cleanup function for proper disposal
+            return cleanupEventListeners;
         }
 
         function setup() {
@@ -1299,334 +1372,289 @@ float fbmSimplexNoise(vec2 v, int octaves) {
             canvasElement = document.querySelector('canvas');
             
             let gl = canvas.GL;
+            // Cache GL context for better performance
+            glContext = gl;
+            
+            // Apply WebGL optimizations
             gl.disable(gl.DEPTH_TEST);  
             gl.disable(gl.CULL_FACE);   
             gl.disable(gl.DITHER);      
             gl.disable(gl.STENCIL_TEST);
             
-            // Initialize pixel density
-            currentPixelDensity = 2;
+            // Enable optimizations for 2D rendering
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.hint(gl.GENERATE_MIPMAP_HINT, gl.FASTEST);
+            
+            // Initialize adaptive resolution
+            currentResolutionScale = 1.0;
+            fpsHistory = [60, 60, 60, 60, 60]; // Initialize with optimistic values
+            lastResolutionCheck = performance.now();
+            lastResolutionChange = performance.now();
+            
+            // Detect device capabilities and adjust settings
+            const deviceInfo = detectDeviceCapabilities();
+            
+            // Initialize pixel density based on device capabilities
+            if (deviceInfo.isLowEndDevice) {
+                currentPixelDensity = 1.0;
+            } else if (deviceInfo.isTablet) {
+                currentPixelDensity = 1.5;
+            } else {
+                currentPixelDensity = 2.0;
+            }
             pixelDensity(currentPixelDensity);
             
+            // Apply initial resolution
+            if (ADAPTIVE_RESOLUTION.ENABLED) {
+                // Adaptive resolution initial scale is already set by detectDeviceCapabilities
+                upCS(); // Update canvas size with adaptive resolution applied
+            }
+            
+            // Pre-allocate recording chunk pool if WebM recording is supported
+            if (typeof MediaRecorder !== 'undefined') {
+                // Initialize memory cleanup timer
+                lastMemoryCleanup = performance.now();
+                
+                // Set up event listeners for visibility changes to optimize memory
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+            }
+            
             noStroke();
+            
+            // Use existing shader if available, otherwise create it
+            if (!tS) {
+                tS = createShader(
+                    document.getElementById('vertex-shader').textContent,
+                    document.getElementById('fragment-shader').textContent
+                );
+            }
             shader(tS);
             
-            if (!inscription_id) {
-                return;
-            }
+            // Apply optimized WebGL rendering setup
+            optimizeGLRendering();
             
-            // Initialize animation state with proper synchronization
-            const currentTime = millis();
-            stT = currentTime;
-            lastPausedTime = 0;
-            cuT = 0;
-            isP = false; // Start paused
+            // Force initialize default values
+            nS = nS || Math.floor(Math.random() * 1000);
+            rSS = rSS || Math.floor(Math.random() * 1000);
+            roA = roA || Math.floor(Math.random() * 360);
+            cuP = typeof cuP !== 'undefined' ? cuP : Math.floor(Math.random() * 5);
+            bN = bN || 0.002;
+            fS = fS || 0.005;
+            lum = lum || 1.5;
+            vib = vib || 2.5;
+            soS = soS || 0.1;
+            soF = soF || 0.1;
+            soA = soA || 0.15;
+            bS = bS || 1.0;
             
-            cuP = R.I(0, 5);
+            // Initialize essential uniforms with defaults to avoid black screen
+            setShaderUniform('u_maxDepth', 6);
+            setShaderUniform('u_nS', nS);
+            setShaderUniform('u_rSS', rSS);
+            setShaderUniform('u_roA', radians(roA));
+            setShaderUniform('u_nOS', [nOX || 0, nOY || 0]);
+            setShaderUniform('u_amplitude', 0.1);
+            setShaderUniform('u_initialFreq', 0.0005);
+            setShaderUniform('u_baseModulation', 1.0);
+            setShaderUniform('u_baseColor', [0.05, 0.05, 0.05, 1.0]);
+            setShaderUniform('u_isLightBackground', false);
+            setShaderUniform('u_randomColor1', [0.8, 0.2, 0.3]);
+            setShaderUniform('u_randomColor2', [0.2, 0.7, 0.9]);
+            setShaderUniform('u_randomColor3', [0.9, 0.8, 0.1]);
+            setShaderUniform('u_luminosity', lum);
+            setShaderUniform('u_vibrancy', vib);
+            setShaderUniform('u_sortStrength', soS);
+            setShaderUniform('u_sortFrequency', soF);
+            setShaderUniform('u_sortAnimSpeed', soA);
+            setShaderUniform('u_caScaleVariation', 0.5);
             
-            tS = createShader(
-                document.getElementById('vertex-shader').textContent,
-                document.getElementById('fragment-shader').textContent
-            );
-            shader(tS);
-            tS.setUniform('u_currentPattern', cuP);
+            // These uniforms need to be set every frame, but initialize them here too
+            setShaderUniform('u_bS', bS);
+            setShaderUniform('u_scaleFactor', scF || 30);
+            setShaderUniform('u_translation', [tX || 0, tY || 0]);
+            setShaderUniform('u_resolution', [width, height]);
+            setShaderUniform('u_time', 0);
+            setShaderUniform('u_cellSize', (height / cV) * bS);
+            setShaderUniform('u_flowSpeed', fS);
+            setShaderUniform('u_currentPattern', cuP);
+            setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
             
-            upCS();
+            // Initialize feature toggle uniforms
+            setShaderUniform('u_enableDomainWarp', true);
+            setShaderUniform('u_enableLayeredNoise', true);
+            setShaderUniform('u_enableFlowFields', true);
+            setShaderUniform('u_enableGlyphNoise', true);
+            setShaderUniform('u_enableGridDistort', true);
+            setShaderUniform('u_enableGlyphNoiseDetail', true);
             
-            nOX = R.I(0,2000)
-            nOY = R.I(0,2000)
-
-            let shiftX = -width/2;
-            let shiftY = -height/2;
-            iTX = shiftX;
-            iTY = shiftY;
-            tX = shiftX;
-            tY = shiftY;
-
-            nS = R.I(0,1000)
-            rSS = R.I(0,1000)
-            roA = R.I(0, 360)
-            
-            let teR = R.I(0, amV.length - 1);
-            let raA = amV[teR];
-            let seF = R.N(10.0, 0.000001);  
-            cS = windowHeight / cV;
-            bN = R.N(0.002, 0.005);
-            let baM = R.N(0.5, 2.0);  
-
-            function caCD(color1, color2) {
-                const dr = color1[0] - color2[0];
-                const dg = color1[1] - color2[1];
-                const db = color1[2] - color2[2];
-                return Math.sqrt(dr * dr + dg * dg + db * db);
-            }
-
-            // Add monochromatic palette definitions
-            const MONO_PALETTES = {
-                HIGH_CONTRAST: {
-                    dark: [0.02, 0.02, 0.02],
-                    mid: [0.35, 0.35, 0.35],
-                    light: [0.85, 0.85, 0.85]
-                },
-                LOW_CONTRAST: {
-                    dark: [0.15, 0.15, 0.15],
-                    mid: [0.35, 0.35, 0.35],
-                    light: [0.55, 0.55, 0.55]
-                },
-                INFRARED: {
-                    dark: [0.05, 0.05, 0.05],
-                    mid: [0.3, 0.3, 0.3],
-                    light: [0.8, 0.8, 0.8]
-                },
-                SEPIA: {
-                    dark: [0.1, 0.08, 0.06],
-                    mid: [0.35, 0.3, 0.25],
-                    light: [0.7, 0.65, 0.6]
-                },
-                SPLIT_TONE: {
-                    dark: [0.1, 0.1, 0.15],
-                    mid: [0.3, 0.3, 0.35],
-                    light: [0.6, 0.55, 0.5]
-                }
-            };
-
-            let isMonochrome = false;
-            let currentMonoPalette = null;
-            let useMutedColors = R.D() < 0.5;
-
-            function geRC(brightnessType = 'light', baseHue = null, existingColors = []) {
-                if (!isMonochrome && R.D() < 0.05) {
-                    isMonochrome = true;
-                    const paletteKeys = Object.keys(MONO_PALETTES);
-                    currentMonoPalette = MONO_PALETTES[paletteKeys[Math.floor(R.D() * paletteKeys.length)]];
-                }
-
-                if (isMonochrome) {
-                    return {
-                        color: currentMonoPalette[brightnessType.toLowerCase()],
-                        hue: 0
-                    };
-                }
-
-                const miCD = 0.3;
-                let at = 0;
-                const maA = 10;
-
-                while (at < maA) {
-                    let h = brightnessType === 'mid' && baseHue !== null ? (baseHue + 0.5) % 1.0 : R.D();
-                    let s = useMutedColors ? R.N(0.3, 0.5) : R.N(0.7, 0.75);
-                    let v;
-
-                    if (useMutedColors) {
-                        switch(brightnessType) {
-                            case 'dark': v = R.N(0.2, 0.35); break;
-                            case 'mid': v = R.N(0.45, 0.6); break;
-                            case 'light': v = R.N(0.7, 0.85); break;
-                        }
-                    } else {
-                        switch(brightnessType) {
-                            case 'dark': v = R.N(0.15, 0.3); break;
-                            case 'mid': v = R.N(0.5, 0.65); break;
-                            case 'light': v = R.N(0.85, 1.0); break;
-                        }
-                    }
-
-                    let i = Math.floor(h * 6);
-                    let f = h * 6 - i;
-                    let p = v * (1 - s);
-                    let q = v * (1 - f * s);
-                    let t = v * (1 - (1 - f) * s);
-
-                    let r, g, b;
-                    switch (i % 6) {
-                        case 0: r = v, g = t, b = p; break;
-                        case 1: r = q, g = v, b = p; break;
-                        case 2: r = p, g = v, b = t; break;
-                        case 3: r = p, g = q, b = v; break;
-                        case 4: r = t, g = p, b = v; break;
-                        case 5: r = v, g = p, b = q; break;
-                    }
-
-                    const newColor = [r, g, b];
-                    let diC = true;
-                    for (const existingColor of existingColors) {
-                        if (caCD(newColor, existingColor) < miCD) {
-                            diC = false;
-                            break;
-                        }
-                    }
-
-                    if (diC || at === maA - 1) {
-                        return { color: newColor, hue: h };
-                    }
-                    at++;
-                }
-            }
-
-            let liR = geRC('light', null, []);
-            let rC1 = liR.color;
-            let miR = geRC('mid', liR.hue, [rC1]);
-            let rC2 = miR.color;
-            let rC3 = geRC('dark', null, [rC1, rC2]).color;
-
-            let baC = [
-                [0.05, 0.05, 0.05, 1.0],
-                [0.90, 0.87, 0.82, 1.0]
-            ];
-
-            let sBaC = baC[R.D() < 0.6 ? 0 : 1];
-            let liBc = sBaC[0] > 0.5;
-
-            // Set all uniforms
-            tS.setUniform('u_nS', nS);
-            tS.setUniform('u_rSS', rSS);
-            tS.setUniform('u_roA', radians(roA));
-            tS.setUniform('u_nOS', [nOX, nOY]);
-            tS.setUniform('u_amplitude', raA);
-            tS.setUniform('u_maxDepth', 6);
-            tS.setUniform('u_luminosity', lum);
-            tS.setUniform('u_vibrancy', vib);
-            tS.setUniform('u_initialFreq', seF);
-            tS.setUniform('u_sortStrength', soS);
-            tS.setUniform('u_sortFrequency', soF);
-            tS.setUniform('u_sortAnimSpeed', soA);
-            tS.setUniform('u_baseModulation', baM);
-            tS.setUniform('u_baseColor', sBaC);
-            tS.setUniform('u_isLightBackground', liBc);
-            tS.setUniform('u_useMutedColors', useMutedColors);
-            tS.setUniform('u_randomColor1', rC1);
-            tS.setUniform('u_randomColor2', rC2);
-            tS.setUniform('u_randomColor3', rC3);
-
-            // Disable mouse and trail effects
-            tS.setUniform('u_mouse', [0.0, 0.0]);
-            tS.setUniform('u_mouseActive', false);
-            tS.setUniform('u_mouseInfluenceRadius', 0.0);
-            tS.setUniform('u_trailPositions', new Array(MAX_TRAIL_POINTS * 2).fill(0));
-            tS.setUniform('u_trailTimes', new Array(MAX_TRAIL_POINTS).fill(TRAIL_LIFETIME / 1000.0));
-            tS.setUniform('u_trailCount', 0);
-
-            scF = 25;
-            upTC();
-            suEH();
-
-            stT = millis();
-            let cASV = R.N(1.5, 3.0);
-            tS.setUniform('u_caScaleVariation', cASV);
-        }
-
-        function draw() {
-            // Implement frame rate control and FPS calculation
-            const now = performance.now();
-            const elapsed = now - lastFrameTime;
-            const frameInterval = 1000 / TARGET_FRAMERATE;
-            
-            // Update FPS calculation every FPS_UPDATE_INTERVAL
-            if (now - fpsUpdateTime >= FPS_UPDATE_INTERVAL) {
-                currentFPS = 1000 / elapsed;
-                fpsUpdateTime = now;
-            }
-            
-            // Check performance and adjust pixel density if needed
-            if (now - lastPerformanceCheck >= PERFORMANCE_CHECK_INTERVAL) {
-                lastPerformanceCheck = now;
+            if (inscription_id) {
+                // Original initialization for specific inscription
+                upCS();
                 
-                // Calculate time since last density change
-                const timeSinceLastChange = now - lastPixelDensityChange;
+                // Setup event handlers with optimized implementation
+                suEH();
+    
+                nOX = R.I(0,2000);
+                nOY = R.I(0,2000);
+                setShaderUniform('u_nOS', [nOX, nOY]);
+
+                let shiftX = -width/2;
+                let shiftY = -height/2;
+                iTX = shiftX;
+                iTY = shiftY;
+                tX = shiftX;
+                tY = shiftY;
+                setShaderUniform('u_translation', [tX, tY]);
+    
+                // Override random values for this inscription
+                nS = R.I(0,1000);
+                rSS = R.I(0,1000);
+                roA = R.I(0, 360);
+                cuP = R.I(0, 5);
                 
-                // Only consider changing if enough time has passed
-                if (timeSinceLastChange >= MIN_DENSITY_CHANGE_INTERVAL) {
-                    let targetDensity;
-                    
-                    // Determine target density based on FPS
-                    if (currentFPS <= MIN_FPS_THRESHOLD) {
-                        targetDensity = 1.0;
-                    } else if (currentFPS <= MID_FPS_THRESHOLD) {
-                        targetDensity = 1.5;
-                    } else {
-                        targetDensity = 2.0;
-                    }
-                    
-                    // Only change if target is different from current
-                    if (targetDensity !== currentPixelDensity) {
-                        currentPixelDensity = targetDensity;
-                        pixelDensity(currentPixelDensity);
-                        lastPixelDensityChange = now;
-                        console.log('Adjusting pixel density to:', currentPixelDensity, 'FPS:', currentFPS);
+                // Update uniforms with inscription-specific values
+                setShaderUniform('u_nS', nS);
+                setShaderUniform('u_rSS', rSS);
+                setShaderUniform('u_roA', radians(roA));
+                setShaderUniform('u_currentPattern', cuP);
+                
+                let teR = R.I(0, amV.length - 1);
+                let raA = amV[teR];
+                setShaderUniform('u_amplitude', raA);
+                
+                let inF = [0.0005, 0.0001, 0.005];
+                let seF = inF[R.I(0,2)];
+                setShaderUniform('u_initialFreq', seF);
+                
+                cS = windowHeight / cV;
+                
+                let noSO = [0.005, 0.003, 0.001];
+                bN = noSO[R.I(0, 2)];
+                setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
+    
+                let baM = R.N(0.5, 2.0);
+                setShaderUniform('u_baseModulation', baM);
+                
+                // Color generation
+                function caCD(color1, color2) {
+                    const dr = color1[0] - color2[0];
+                    const dg = color1[1] - color2[1];
+                    const db = color1[2] - color2[2];
+                    return Math.sqrt(dr * dr + dg * dg + db * db);
+                }
+    
+                function geRC(brightnessType = 'light', baseHue = null, existingColors = []) {
+                    const miCD = 0.3;
+                    let at = 0;
+                    const maA = 10;
+    
+                    while (at < maA) {
+                        let h;
+                        if (brightnessType === 'mid' && baseHue !== null) {
+                            h = (baseHue + 0.5) % 1.0;
+                        } else {
+                            h = R.D();  
+                        }
+    
+                        let s = R.N(0.8, 1.0);  
+                        let v;
+                        
+                        switch(brightnessType) {
+                            case 'dark':
+                                v = R.N(0.15, 0.3);  
+                                break;
+                            case 'mid':
+                                v = R.N(0.5, 0.65);  
+                                break;
+                            case 'light':
+                                v = R.N(0.85, 1.0);  
+                                break;
+                        }
+    
+                        let i = Math.floor(h * 6);
+                        let f = h * 6 - i;
+                        let p = v * (1 - s);
+                        let q = v * (1 - f * s);
+                        let t = v * (1 - (1 - f) * s);
+    
+                        let r, g, b;
+                        switch (i % 6) {
+                            case 0: r = v, g = t, b = p; break;
+                            case 1: r = q, g = v, b = p; break;
+                            case 2: r = p, g = v, b = t; break;
+                            case 3: r = p, g = q, b = v; break;
+                            case 4: r = t, g = p, b = v; break;
+                            case 5: r = v, g = p, b = q; break;
+                        }
+    
+                        const newColor = [r, g, b];
+    
+                        let diC = true;
+                        for (const existingColor of existingColors) {
+                            if (caCD(newColor, existingColor) < miCD) {
+                                diC = false;
+                                break;
+                            }
+                        }
+    
+                        if (diC || at === maA - 1) {
+                            return { color: newColor, hue: h };
+                        }
+    
+                        at++;
                     }
                 }
-            }
-            
-            // Skip frame if we're rendering too quickly
-            if (elapsed < frameInterval) {
-                return;
-            }
-            
-            // Update last frame time with adjustment to maintain consistent frame timing
-            lastFrameTime = now - (elapsed % frameInterval);
-            
-            clear();
-            background(0);  
-            
-            // Synchronized time handling
-            if (isP) {
-                // When playing, calculate time since start, accounting for any paused time
-                cuT = ((millis() - stT) / 1000.0);
+                
+                let liR = geRC('light', null, []);
+                let rC1 = liR.color;  
+                
+                let miR = geRC('mid', liR.hue, [rC1]);
+                let rC2 = miR.color;  
+                
+                let rC3 = geRC('dark', null, [rC1, rC2]).color;
+                
+                // Update color uniforms with inscription-specific colors  
+                setShaderUniform('u_randomColor1', rC1);
+                setShaderUniform('u_randomColor2', rC2);
+                setShaderUniform('u_randomColor3', rC3);
+                
+                let baC = [
+                    [0.05, 0.05, 0.05, 1.0],  
+                    [0.90, 0.87, 0.82, 1.0]    
+                ];
+                
+                let sBaC = baC[R.D() < 0.6 ? 0 : 1];
+                let liBc = sBaC[0] > 0.5;
+                
+                setShaderUniform('u_baseColor', sBaC);
+                setShaderUniform('u_isLightBackground', liBc);
+                
+                let cASV = R.N(1.5, 3.0);
+                setShaderUniform('u_caScaleVariation', cASV);
             } else {
-                // When paused, stay exactly at the last paused time
-                cuT = lastPausedTime;
+                // Generic setup for no inscription
+                upCS();
+                suEH();
+                
+                // Set default scale and position
+                scF = 30;
+                tX = -width/2;
+                tY = -height/2;
+                iTX = tX;
+                iTY = tY;
+                
+                // Update these in the shader too
+                setShaderUniform('u_scaleFactor', scF);
+                setShaderUniform('u_translation', [tX, tY]);
             }
-
-            // Calculate shader-space coordinates without scale factor multiplication
-            const actualTX = tX;
-            const actualTY = tY;
-
-            // Set shader uniforms
-            tS.setUniform('u_bS', bS);
-            tS.setUniform('u_scaleFactor', scF);
-            tS.setUniform('u_translation', [actualTX, actualTY]);
-            tS.setUniform('u_resolution', [width, height]);
-            tS.setUniform('u_time', cuT);
-            tS.setUniform('u_cellSize', (height / cV) * bS);
-            tS.setUniform('u_flowSpeed', fS);
-            tS.setUniform('u_luminosity', lum);
-            tS.setUniform('u_vibrancy', vib);
-            tS.setUniform('u_sortStrength', soS);
-            tS.setUniform('u_sortFrequency', soF);
-            tS.setUniform('u_sortAnimSpeed', soA);
-            tS.setUniform('u_currentPattern', cuP);
             
-            // Keep mouse influence disabled
-            tS.setUniform('u_mouseActive', false);
-            tS.setUniform('u_mouse', [0.0, 0.0]);
-            tS.setUniform('u_trailCount', 0);
-            
-            let cSP = height / cV;
-            let dySN = bN * (100.0 / floor(cSP)); 
-            tS.setUniform('u_noiseScale', dySN);
-            tS.setUniform('u_caScaleVariation', 0.5);
-
-            beginShape();
-            vertex(0, 0, 0, 0, 0);
-            vertex(2, 0, 0, 1, 0);
-            vertex(2, 2, 0, 1, 1);
-            vertex(0, 2, 0, 0, 1);
-            endShape(CLOSE);
-
-            if (isR && (millis() - reST > reDu)) {
-                noRe();
-            }
+            stT = millis();
         }
-
-        
 
         function upCS() {
             const wiR = windowWidth / windowHeight;
             let neW, neH;
-            
-            // Store current relative position before resize
-            let relX = (tX + width/2) / width;
-            let relY = (tY + height/2) / height;
             
             switch(dM) {
                 case 0: 
@@ -1645,44 +1673,437 @@ float fbmSimplexNoise(vec2 v, int octaves) {
                     break;
                 
                 case 2: 
-                    if (wiR > 3/4) {
+                    if (wiR > 2/3) {
                         neH = windowHeight;
-                        neW = (windowHeight * 3) / 4;
+                        neW = (windowHeight * 2) / 3;
                     } else {
                         neW = windowWidth;
-                        neH = (windowWidth * 4) / 3;
-                    }
-                    break;
-                
-                case 3: 
-                    if (wiR > 4/3) {
-                        neH = windowHeight;
-                        neW = (windowHeight * 4) / 3;
-                    } else {
-                        neW = windowWidth;
-                        neH = (windowWidth * 3) / 4;
+                        neH = (windowWidth * 3) / 2;
                     }
                     break;
             }
             
+            if (ADAPTIVE_RESOLUTION.ENABLED) {
+                // Apply resolution scaling
+                neW = Math.floor(neW * currentResolutionScale);
+                neH = Math.floor(neH * currentResolutionScale);
+            }
+           
+            if (width !== neW || height !== neH) {
+                // Preserve current position relative to center 
+                const oldCenterX = tX + width/2;
+                const oldCenterY = tY + height/2;
+                
+                // Resize canvas
+                resizeCanvas(neW, neH);
+                
+                // Update position to maintain view center
+                tX = oldCenterX - neW/2;
+                tY = oldCenterY - neH/2;
+                
+                // Set CSS display size to maintain proper display
+                if (canvasElement) {
+                    if (ADAPTIVE_RESOLUTION.ENABLED) {
+                        // When using adaptive resolution, set display size to window dimensions
+                        const displayWidth = dM === 0 ? windowWidth : 
+                                            dM === 1 ? (wiR > 1 ? windowHeight : windowWidth) : 
+                                            (wiR > 2/3 ? (windowHeight * 2) / 3 : windowWidth);
+                                            
+                        const displayHeight = dM === 0 ? windowHeight : 
+                                             dM === 1 ? (wiR > 1 ? windowHeight : windowWidth) : 
+                                             (wiR > 2/3 ? windowHeight : (windowWidth * 3) / 2);
+                        
+                        canvasElement.style.width = `${displayWidth}px`;
+                        canvasElement.style.height = `${displayHeight}px`;
+                    }
+                    
+                    canvasElement.style.position = 'absolute';
+                    canvasElement.style.left = '50%';
+                    canvasElement.style.top = '50%';
+                    canvasElement.style.transform = 'translate(-50%,-50%)';
+                }
+            }
+        }
+
+        function draw() {
+            // Skip rendering when tab is not visible
+            if (!isTabVisible) {
+                console.log("Tab not visible, skipping render");
+                return;
+            }
+            
+            // Request next frame early for better performance
+            if (isP) {
+                requestAnimationFrame(draw);
+            }
+            
+            // Frame rate control for consistent animation
+            const now = performance.now();
+            const elapsed = now - lastFrameTime;
+            const frameInterval = 1000 / TARGET_FRAMERATE;
+            
+            // FPS Calculation
+            if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
+                currentFPS = 1000 / (elapsed || 1);
+                fpsUpdateTime = now;
+                console.log("FPS:", currentFPS.toFixed(1));
+                
+                // Check adaptive resolution on FPS updates
+                updateAdaptiveResolution();
+            }
+            
+            // Performance monitoring and adaptation
+            if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
+                lastPerformanceCheck = now;
+                
+                // Only adjust pixel density if enough time has passed since last change
+                // and we're not using adaptive resolution scaling
+                if (!ADAPTIVE_RESOLUTION.ENABLED && 
+                    now - lastPixelDensityChange > MIN_DENSITY_CHANGE_INTERVAL) {
+                    let targetDensity;
+                    
+                    // Set quality based on performance
+                    if (currentFPS <= MIN_FPS_THRESHOLD) {
+                        targetDensity = 1.0;
+                    } else if (currentFPS <= MID_FPS_THRESHOLD) {
+                        targetDensity = 1.5;
+                    } else {
+                        targetDensity = 2.0;
+                    }
+                    
+                    // Only change if target is different from current
+                    if (targetDensity !== currentPixelDensity) {
+                        currentPixelDensity = targetDensity;
+                        pixelDensity(currentPixelDensity);
+                        lastPixelDensityChange = now;
+                        console.log('Adjusting pixel density to:', currentPixelDensity, 'FPS:', currentFPS.toFixed(1));
+                    }
+                }
+            }
+            
+            // Periodic memory cleanup
+            if (now - lastMemoryCleanup >= MEMORY_CLEANUP_INTERVAL) {
+                performMemoryCleanup();
+            }
+            
+            // Skip frame if we're rendering too quickly
+            if (elapsed < frameInterval) {
+                return;
+            }
+            
+            // Update last frame time with adjustment to maintain consistent frame timing
+            lastFrameTime = now - (elapsed % frameInterval);
+            
+            // Clear buffer with minimal overhead - add background for visibility
+            clear();
+            background(0); // Restore background to ensure visibility
+            
+            // Check if WebGL context is valid - recover if not
+            if (!glContext || glContext.isContextLost()) {
+                console.error("WebGL context lost, attempting to recover");
+                // Try to reinitialize if context is lost
+                if (canvasElement) {
+                    glContext = canvasElement.getContext('webgl');
+                    if (glContext) {
+                        optimizeGLRendering();
+                    }
+                }
+                return; // Skip this frame if we're trying to recover
+            }
+            
+            // Synchronized time handling
+            if (isP) {
+                cuT = ((millis() - stT) / 1000.0);
+            }
+
+            if (mouseIsPressed && mouseButton === LEFT) {
+                if (pMX !== undefined && pMY !== undefined) {
+                    let deltaX = mouseX - pMX;
+                    let deltaY = mouseY - pMY;
+                    
+                    tX -= deltaX * (scF / 5);
+                    tY += deltaY * (scF / 5);
+                }
+                pMX = mouseX;
+                pMY = mouseY;
+            } else {
+                pMX = undefined;
+                pMY = undefined;
+            }
+
+            let scT = cuT;
+            
+            // Ensure shader is bound correctly
+            if (!tS) {
+                console.error("Shader not initialized");
+                // Recreate shader if it's null
+                tS = createShader(
+                    document.getElementById('vertex-shader').textContent,
+                    document.getElementById('fragment-shader').textContent
+                );
+            }
+            shader(tS);
+            
+            // Batch update uniform values to minimize WebGL state changes
+            // Use optimal shader uniform updates with caching to prevent redundant WebGL calls
+            const uniforms = {
+                'u_bS': bS,
+                'u_scaleFactor': scF,
+                'u_translation': [tX, tY],
+                'u_resolution': [width, height],
+                'u_time': scT,
+                'u_cellSize': (height / cV) * bS,
+                'u_flowSpeed': fS,
+                'u_luminosity': lum,
+                'u_vibrancy': vib,
+                'u_sortStrength': soS,
+                'u_sortFrequency': soF,
+                'u_sortAnimSpeed': soA,
+                'u_currentPattern': cuP,
+                'u_noiseScale': bN * (100.0 / floor(height / cV)),
+                'u_caScaleVariation': 0.5
+            };
+            
+            // Log key uniforms for debugging
+            if (frameCount % 300 === 0) {
+                console.log("Key uniforms:", {
+                    resolution: uniforms['u_resolution'],
+                    time: uniforms['u_time'],
+                    cellSize: uniforms['u_cellSize']
+                });
+            }
+            
+            try {
+                // Update all uniforms at once to reduce shader binding state changes
+                updateShaderUniforms(uniforms);
+                
+                // Use our optimized rendering function with fallbacks
+                renderFullscreenQuad();
+            } catch (e) {
+                console.error("Error during rendering:", e);
+                // Use most basic rendering as ultimate fallback
+                rect(0, 0, width, height);
+            }
+
+            if (isR && (millis() - reST > reDu)) {
+                noRe();
+            }
+        }
+        
+        // Efficient batch update of shader uniforms
+        function updateShaderUniforms(uniformsObj) {
+            // Ensure shader is bound only once
+            shader(tS);
+            
+            // Update all uniforms in a batch
+            for (const [name, value] of Object.entries(uniformsObj)) {
+                // Use our existing caching function to skip redundant updates
+                setShaderUniform(name, value);
+            }
+        }
+        
+        // Modified optimizeGLRendering to enable faster draw paths
+        function optimizeGLRendering() {
+            // Ensure WebGL context is valid
+            if (!glContext) {
+                console.error("No WebGL context found when optimizing");
+                if (canvasElement) {
+                    try {
+                        glContext = canvasElement.getContext('webgl');
+                    } catch (e) {
+                        console.error("Failed to get WebGL context:", e);
+                        return;
+                    }
+                }
+                if (!glContext) return;
+            }
+            
+            // Reset WebGL context state to known good values
+            try {
+                // Optimize WebGL state for this specific renderer
+                glContext.disable(glContext.DEPTH_TEST);
+                glContext.disable(glContext.CULL_FACE);
+                glContext.disable(glContext.DITHER);
+                glContext.disable(glContext.STENCIL_TEST);
+                
+                // Enable blend mode optimized for our 2D rendering
+                glContext.enable(glContext.BLEND);
+                glContext.blendFunc(glContext.SRC_ALPHA, glContext.ONE_MINUS_SRC_ALPHA);
+                
+                // Set rendering hints
+                glContext.hint(glContext.GENERATE_MIPMAP_HINT, glContext.FASTEST);
+                
+                // Create complete shader program for direct rendering
+                try {
+                    // Get the shader source code
+                    const vertSrc = document.getElementById('vertex-shader').textContent;
+                    const fragSrc = document.getElementById('fragment-shader').textContent;
+                    
+                    // Create program
+                    const directProgram = glContext.createProgram();
+                    
+                    // Create and compile vertex shader
+                    const vertShader = glContext.createShader(glContext.VERTEX_SHADER);
+                    glContext.shaderSource(vertShader, vertSrc);
+                    glContext.compileShader(vertShader);
+                    
+                    // Create and compile fragment shader
+                    const fragShader = glContext.createShader(glContext.FRAGMENT_SHADER);
+                    glContext.shaderSource(fragShader, fragSrc);
+                    glContext.compileShader(fragShader);
+                    
+                    // Attach shaders to program and link
+                    glContext.attachShader(directProgram, vertShader);
+                    glContext.attachShader(directProgram, fragShader);
+                    glContext.linkProgram(directProgram);
+                    
+                    // Check for errors
+                    if (!glContext.getProgramParameter(directProgram, glContext.LINK_STATUS)) {
+                        throw new Error("Direct rendering program failed to link: " + 
+                                        glContext.getProgramInfoLog(directProgram));
+                    }
+                    
+                    // Store program for direct rendering
+                    glContext.directProgram = directProgram;
+                    
+                    // Get attribute locations
+                    glContext.posAttribLoc = glContext.getAttribLocation(directProgram, "aPosition");
+                    glContext.texAttribLoc = glContext.getAttribLocation(directProgram, "aTexCoord");
+                } catch (e) {
+                    console.error("Failed to create direct rendering program:", e);
+                }
+                
+                // Create vertex buffer for more efficient quad rendering
+                const buffer = glContext.createBuffer();
+                if (!buffer) {
+                    console.error("Failed to create WebGL buffer");
+                    glContext.isOptimizedRenderingEnabled = false;
+                    return;
+                }
+                
+                glContext.bindBuffer(glContext.ARRAY_BUFFER, buffer);
+                
+                // Create better structured quad with positions and texcoords interleaved
+                // Format: x, y, z, s, t (position and texcoord)
+                const vertices = new Float32Array([
+                    -1.0, -1.0, 0.0, 0.0, 0.0,
+                    1.0, -1.0, 0.0, 1.0, 0.0,
+                    1.0, 1.0, 0.0, 1.0, 1.0,
+                    -1.0, 1.0, 0.0, 0.0, 1.0
+                ]);
+                
+                glContext.bufferData(glContext.ARRAY_BUFFER, vertices, glContext.STATIC_DRAW);
+                
+                // Store the vertices buffer for later use
+                glContext.quadBuffer = buffer;
+                glContext.isOptimizedRenderingEnabled = true;
+                console.log("WebGL optimization successful - direct rendering enabled");
+            } catch (e) {
+                // Fallback if custom buffer creation fails
+                console.error("WebGL optimization failed:", e);
+                glContext.isOptimizedRenderingEnabled = false;
+            }
+        }
+
+        // Add debug helper function for direct WebGL path
+        function debugRenderingInfo(message, level = 'info') {
+            // Only log in development mode or when forced
+            const isDebugEnabled = false; // Change to true for debugging
+            if (isDebugEnabled) {
+                switch(level) {
+                    case 'error': console.error('[WebGL Direct]', message); break;
+                    case 'warn': console.warn('[WebGL Direct]', message); break;
+                    default: console.log('[WebGL Direct]', message);
+                }
+            }
+        }
+        
+        // Optimized function to render a fullscreen quad with minimal state changes
+        function renderFullscreenQuad() {
+            if (!glContext) {
+                console.error("No GL context for rendering fullscreen quad");
+                return;
+            }
+            
+            try {
+                // Temporarily disable direct WebGL rendering path - use p5's path instead
+                if (false && glContext.isOptimizedRenderingEnabled && glContext.directProgram) {
+                    // Direct WebGL rendering path code left in place but disabled
+                    // ...
+                } else {
+                    debugRenderingInfo("Using p5 fallback path", 'info');
+                }
+                
+                // Always use p5's rendering path for now
+                beginShape();
+                vertex(0, 0, 0, 0, 0);
+                vertex(2, 0, 0, 1, 0);
+                vertex(2, 2, 0, 1, 1);
+                vertex(0, 2, 0, 0, 1);
+                endShape(CLOSE);
+            } catch (e) {
+                console.error("Error in renderFullscreenQuad:", e);
+                // Ultimate fallback
+                rect(0, 0, width, height);
+            }
+        }
+
+        
+
+        function upCS() {
+            const wiR = windowWidth / windowHeight;
+            let neW, neH;
+            
+            switch(dM) {
+                case 0: 
+                    neW = windowWidth;
+                    neH = windowHeight;
+                    break;
+                
+                case 1: 
+                    if (wiR > 1) {
+                        neH = windowHeight;
+                        neW = windowHeight;
+                    } else {
+                        neW = windowWidth;
+                        neH = windowWidth;
+                    }
+                    break;
+                
+                case 2: 
+                    if (wiR > 2/3) {
+                        neH = windowHeight;
+                        neW = (windowHeight * 2) / 3;
+                    } else {
+                        neW = windowWidth;
+                        neH = (windowWidth * 3) / 2;
+                    }
+                    break;
+            }
+           
             if (width !== neW || height !== neH) {
                 resizeCanvas(neW, neH);
                 
-                // Apply the relative position to the new dimensions
-                tX = -neW/2 + (relX * neW);
-                tY = -neH/2 + (relY * neH);
+                tX = -neW/2;
+                tY = -neH/2;
                 
-                canvasElement.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)';
+                // Use cached canvas reference instead of querying the DOM again
+                if (canvasElement) {
+                    canvasElement.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)';
+                }
             }
         }
 
         
         let reTO;
         function windowResized() {
-            // Clear previous timeout to implement debouncing
-            if (reTO) clearTimeout(reTO);
+            // Cancel previous timeout to avoid memory leaks
+            if (reTO) {
+            clearTimeout(reTO);
+                reTO = null;
+            }
             
-            // Using requestAnimationFrame for smoother updates and less performance impact
+            // Use requestAnimationFrame for smoother updates and less performance impact
             // Debounce with setTimeout as a backup for consistent timing
             reTO = setTimeout(() => {
                 // Use requestAnimationFrame to align with browser's render cycle
@@ -1699,70 +2120,200 @@ float fbmSimplexNoise(vec2 v, int octaves) {
 
         // Add these new functions
         function stRe() {
-            // Clear any previous recording chunks
-            reCN = [];
+            // Clear previous chunks but keep the array to reduce allocations
+            reCN.length = 0;
+            recordingChunkIndex = 0;
             
-            // Get stream from canvas
+            // Use cached canvas element reference
             const stream = canvasElement.captureStream(60); 
-            
-            // Create media recorder with high quality settings
             meR = new MediaRecorder(stream, {
                 mimeType: 'video/webm;codecs=vp9',
                 videoBitsPerSecond: 50000000 
             });
 
-            // Add event handlers
             meR.ondataavailable = (e) => {
-                if (e.data.size > 0) {
+                if (e.data && e.data.size > 0) {
+                    // Store only non-empty chunks
                     reCN.push(e.data);
                 }
             };
 
             meR.onstop = saRe;
 
-            // Start recording
-            meR.start();
+            // Schedule regular data chunks to avoid memory spikes
+            meR.start(1000); // Request data in 1-second chunks
             isR = true;
             reST = millis();
         }
 
         function noRe() {
             if (meR && meR.state !== 'inactive') {
-                meR.stop();
-            }
+            meR.stop();
             isR = false;
+            }
         }
 
         function saRe() {
-            if (!reCN.length) return;
+            if (reCN.length === 0) {
+                console.log('No recording data available.');
+                return;
+            }
             
-            // Create blob from recording chunks
-            const blob = new Blob(reCN, {
-                type: 'video/webm'
-            });
+            // Create blob using a single operation
+            const blob = new Blob(reCN, {type: 'video/webm'});
             
-            // Create download link
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
+            // Generate timestamp for filename
             const timestamp = geT();
             
+            // Create download link
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `recording_${timestamp}.webm`;
             a.style.display = 'none';
-            a.href = url;
-            a.download = `shader_recording_${timestamp}.webm`;
             
-            // Trigger download
+            // Add to DOM, click, and remove to trigger download
             document.body.appendChild(a);
             a.click();
             
-            // Cleanup
+            // Clean up
             setTimeout(() => {
                 document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                // Clear recording chunks to free memory
-                reCN = [];
+                URL.revokeObjectURL(a.href);
+                // Clear chunks array
+                reCN.length = 0;
             }, 100);
         }
 
+        // Function to set uniform values to shader with caching
+        function setShaderUniform(name, value, cachedName = null) {
+            // Use provided cachedName or derive from uniform name
+            const cacheKey = cachedName || name.replace('u_', '');
+            
+            // Handle array values
+            if (Array.isArray(value)) {
+                // Check each element in array
+                if (
+                    !cachedUniforms[cacheKey] || 
+                    value.some((v, i) => v !== cachedUniforms[cacheKey][i])
+                ) {
+                    // Update cache with defensive copy
+                    cachedUniforms[cacheKey] = [...value];
+                    
+                    // Set the actual WebGL uniform
+                    tS.setUniform(name, value);
+                }
+            } else {
+                // For primitive values, simple comparison
+                if (cachedUniforms[cacheKey] !== value) {
+                    // Update cache
+                    cachedUniforms[cacheKey] = value;
+                    
+                    // Set the actual WebGL uniform
+                    tS.setUniform(name, value);
+                }
+            }
+        }
+
+        // Add these constants at the top of the script section
+        const ADAPTIVE_RESOLUTION = {
+            ENABLED: true,              // Master toggle for adaptive resolution
+            MIN_SCALE: 0.5,             // Minimum resolution scale (0.5 = 50% of full resolution)
+            MAX_SCALE: 1.0,             // Maximum resolution scale (1.0 = 100% of full resolution) 
+            TARGET_FPS: 50,             // Target FPS to maintain
+            ADJUSTMENT_RATE: 0.05,      // How quickly to adjust resolution (higher = faster changes)
+            CHECK_INTERVAL: 1000,       // How often to check performance (milliseconds)
+            STABILITY_THRESHOLD: 5,     // FPS difference threshold for considering stable
+            UPSCALE_DELAY: 3000         // Wait time before attempting to increase resolution
+        };
+        
+        // Add these variables to track adaptive resolution state
+        let currentResolutionScale = 1.0;
+        let lastResolutionCheck = 0;
+        let lastResolutionChange = 0;
+        let fpsHistory = [];
+        let isPerformanceStable = false;
+        
+        function updateAdaptiveResolution() {
+            // Skip if disabled
+            if (!ADAPTIVE_RESOLUTION.ENABLED) return;
+            
+            const now = performance.now();
+            
+            // Only check periodically
+            if (now - lastResolutionCheck < ADAPTIVE_RESOLUTION.CHECK_INTERVAL) return;
+            lastResolutionCheck = now;
+            
+            // Track FPS for stability detection
+            fpsHistory.push(currentFPS);
+            if (fpsHistory.length > 5) fpsHistory.shift();
+            
+            // Calculate average and stability
+            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
+            const fpsVariance = Math.max(...fpsHistory) - Math.min(...fpsHistory);
+            isPerformanceStable = fpsVariance < ADAPTIVE_RESOLUTION.STABILITY_THRESHOLD;
+            
+            // Only make changes if we've been stable for a while
+            if (!isPerformanceStable) return;
+            
+            // Determine if we need to adjust resolution
+            let newScale = currentResolutionScale;
+            
+            // If FPS is too low, decrease resolution
+            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS) {
+                newScale = Math.max(
+                    ADAPTIVE_RESOLUTION.MIN_SCALE,
+                    currentResolutionScale - ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
+                );
+            } 
+            // If FPS is good and we haven't changed recently, try increasing resolution
+            else if (avgFps > ADAPTIVE_RESOLUTION.TARGET_FPS + 10 && 
+                    now - lastResolutionChange > ADAPTIVE_RESOLUTION.UPSCALE_DELAY) {
+                newScale = Math.min(
+                    ADAPTIVE_RESOLUTION.MAX_SCALE,
+                    currentResolutionScale + ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
+                );
+            }
+            
+            // Apply the change if it's different
+            if (Math.abs(newScale - currentResolutionScale) > 0.01) {
+                applyResolutionScale(newScale);
+                lastResolutionChange = now;
+            }
+        }
+        
+        function applyResolutionScale(scale) {
+            // Skip if no change or outside valid range
+            if (scale === currentResolutionScale || 
+                scale < ADAPTIVE_RESOLUTION.MIN_SCALE || 
+                scale > ADAPTIVE_RESOLUTION.MAX_SCALE) {
+                return;
+            }
+            
+            currentResolutionScale = scale;
+            
+            // Calculate new canvas size based on window size and scale
+            const targetWidth = Math.floor(windowWidth * scale);
+            const targetHeight = Math.floor(windowHeight * scale);
+            
+            // Only resize if significant change
+            if (Math.abs(width - targetWidth) > 10 || Math.abs(height - targetHeight) > 10) {
+                // Apply new size to the rendering buffer
+                resizeCanvas(targetWidth, targetHeight);
+                
+                // Keep display size the same (CSS will handle scaling up)
+                if (canvasElement) {
+                    canvasElement.style.width = `${windowWidth}px`;
+                    canvasElement.style.height = `${windowHeight}px`;
+                }
+                
+                console.log(`Adaptive resolution: ${Math.round(scale * 100)}% (${targetWidth}x${targetHeight})`);
+                
+                // Update coordinates and translation to match new resolution
+                const scaleChange = width / targetWidth;
+                tX = tX * scaleChange;
+                tY = tY * scaleChange;
+            }
+        }
     </script>
   </body>
 </html>
