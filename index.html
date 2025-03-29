@@ -130,59 +130,63 @@
             return mod289((x * 34.0 + 1.0) * x); 
         }
 
-        mediump float simplexNoise(mediump vec2 v, float time) {
-            // Original simplex noise variables and setup
-            mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
-            
-            // Combine time addition into a single step
-            v += time * 0.03;
-            
-            // Integer calculations can use low precision
-            lowp vec2 i = floor(v + dot(v, C.yy));
-            mediump vec2 x0 = v - i + dot(i, C.xx);
-            
-            // These boolean operations and offsets can use low precision
-            lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-            
-            // Combined calculations to reduce register usage
-            mediump vec4 x12 = x0.xyxy + C.xxzz;
-            x12.xy -= i1;
-            
-            // Use existing mod289 function
-            i = mod289(i);
-            lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-            
-            // Dot products need medium precision
-            mediump vec3 dots = vec3(
-                dot(x0, x0),
-                dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
-                dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
-            );
-            
-            // These multiplications can use low precision
-            lowp vec3 m = max(0.5 - dots, 0.0);
-            m = m * m;
-            m = m * m;
-            
-            // These can use low precision
-            lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
-            lowp vec3 h = abs(x) - 0.5;
-            lowp vec3 ox = floor(x + 0.5);
-            lowp vec3 a0 = x - ox;
-            
-            // Final calculation
-            m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
-            
-            // Gradient calculation
-            lowp vec3 g = vec3(
-                a0.x * x0.x + h.x * x0.y,
-                a0.y * x12.x + h.y * x12.y,
-                a0.z * x12.z + h.z * x12.w
-            );
-            
-            return 130.0 * dot(m, g);
-        }
 
+//////////////////////////////////////////////////////////////////////
+
+
+mediump float simplexNoise(mediump vec2 v, float time) {
+    const mediump vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+    
+    // Combine time addition into a single step
+    v += time * 0.03;
+    
+    // Integer calculations can use low precision
+    lowp vec2 i = floor(v + dot(v, C.yy));
+    mediump vec2 x0 = v - i + dot(i, C.xx);
+    
+    // These boolean operations and offsets can use low precision
+    lowp vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    
+    // Combined calculations to reduce register usage
+    mediump vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    
+    // Use existing mod289 function
+    i = mod289(i);
+    lowp vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    
+    // Dot products need medium precision
+    mediump vec3 dots = vec3(
+        dot(x0, x0),
+        dot(vec2(x12.x, x12.y), vec2(x12.x, x12.y)),
+        dot(vec2(x12.z, x12.w), vec2(x12.z, x12.w))
+    );
+    
+    // These multiplications can use low precision
+    lowp vec3 m = max(0.5 - dots, 0.0);
+    m = m * m;
+    m = m * m;
+    
+    // These can use low precision
+    lowp vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    lowp vec3 h = abs(x) - 0.5;
+    lowp vec3 ox = floor(x + 0.5);
+    lowp vec3 a0 = x - ox;
+    
+    // Final calculation
+    m *= 1.792842914 - 0.853734913 * (a0 * a0 + h * h);
+    
+    // Gradient calculation
+    lowp vec3 g = vec3(
+        a0.x * x0.x + h.x * x0.y,
+        a0.y * x12.x + h.y * x12.y,
+        a0.z * x12.z + h.z * x12.w
+    );
+    
+    return 130.0 * dot(m, g);
+}
+
+        /////////////////////////////////////////////////////////////////
         lowp float fastSin(float x) {
             // Wrap to -PI to PI range
             x = mod(x + M_PI, 2.0 * M_PI) - M_PI;
@@ -281,63 +285,181 @@
         }
 
         lowp vec3 getColorFromPalette(float t) {
-            // PERFORMANCE OPTIMIZATION: Simplified palette with fewer trig functions
+            // Enhanced palette function with more varied color output
             
-            // Constrain input and use linear mapping
-            t = clamp(t, 0.0, 4.0) * 2.0;
+            // Constrain input and use improved mapping for more variation
+            t = clamp(t, 0.0, 5.0) * 2.0; // Increased range
             
-            // Use simpler interpolation factors without sine/cosine
-            float f1 = fract(t);
-            float f2 = fract(t + 0.33);
-            float f3 = fract(t * 1.5);
+            // Create more varied color patterns based on position in the sequence
+            float patternMod = floor(mod(t, 3.0)); // Split into 3 pattern regions
             
-            // Much faster linear combinations of the colors
-            vec3 color1 = mix(u_randomColor1, u_randomColor2, f1) * 0.6 + 
-                           u_randomColor3 * 0.4 * f2;
-                           
-            vec3 color2 = mix(u_randomColor2, u_randomColor3, f3) * 0.7 + 
-                           u_randomColor1 * 0.3 * (1.0-f1);
+            // Use non-linear interpolation factors for more interesting gradients
+            float f1 = pow(fract(t), 1.2);
+            float f2 = pow(fract(t + 0.33), 1.5);
+            float f3 = smoothstep(0.0, 1.0, fract(t * 1.5));
             
-            // Simple smoothstep for final blend
-            return mix(color1, color2, smoothstep(0.2, 0.8, fract(t)));
+            // Create a secondary color variation factor for more diversity
+            float altFactor = fract(t * 2.31); // Irrational multiplier for less repetition
+            
+            // More diverse color mixing with conditional patterns based on the pattern region
+            vec3 color1, color2;
+            
+            if (patternMod < 1.0) {
+                // First pattern: primary colors with secondary influence
+                color1 = mix(u_randomColor1, u_randomColor2, f1) * 0.7 + 
+                         u_randomColor3 * 0.5 * f2;
+                         
+                color2 = mix(u_randomColor2, u_randomColor3, f3) * 0.8 + 
+                         u_randomColor1 * 0.4 * (1.0-f1);
+            } else if (patternMod < 2.0) {
+                // Second pattern: complementary color approach
+                color1 = mix(u_randomColor2, u_randomColor3, f2) * 0.75 + 
+                         u_randomColor1 * 0.4 * f3;
+                         
+                color2 = mix(u_randomColor3, u_randomColor1, f1) * 0.7 + 
+                         u_randomColor2 * 0.5 * (1.0-f3);
+            } else {
+                // Third pattern: triadic harmony
+                color1 = mix(u_randomColor3, u_randomColor1, f3) * 0.65 + 
+                         u_randomColor2 * 0.6 * f1;
+                         
+                color2 = mix(u_randomColor1, u_randomColor2, f2) * 0.7 + 
+                         u_randomColor3 * 0.45 * (1.0-f2);
+            }
+            
+            // Apply color enhancement based on position in sequence
+            if (altFactor > 0.7) {
+                // Occasional color inversion for variety
+                color1 = 1.0 - color1 * 0.8;
+                color2 = 1.0 - color2 * 0.8;
+            } else if (altFactor < 0.3) {
+                // Occasional brightness boost
+                color1 = color1 * 1.3;
+                color2 = color2 * 1.3;
+            }
+            
+            // Boost saturation of the colors by pushing them away from gray
+            color1 = mix(color1, pow(color1, vec3(0.85)), 0.4);
+            color2 = mix(color2, pow(color2, vec3(0.85)), 0.4);
+            
+            // Use higher contrast smoothstep for final blend with varied edge values
+            return mix(color1, color2, smoothstep(0.15, 0.85, fract(t)));
         }
 
         lowp vec3 enhanceColor(vec3 color, float noiseValue) {
-            // PERFORMANCE OPTIMIZATION: Simplified color enhancement with fewer operations
+            // Enhanced color variety with multiple color processing approaches
             
-            // Simple luminance calculation (same weights for all channels for speed)
+            // Simple luminance calculation
             float luminance = (color.r + color.g + color.b) * 0.333;
             
-            // Fast brightness boost based on luminance
-            vec3 boosted = color * (1.0 + (1.0 - luminance) * 0.5);
+            // Create varied color enhancement based on the input color's properties
+            float colorSum = color.r + color.g + color.b;
+            float colorVariation = mod(colorSum * 10.0, 3.0); // Create 3 distinct enhancement methods
             
-            // Fast saturation adjustment without complex operations
-            float saturation = u_isLightBackground ? 1.15 : 1.25;
-            vec3 saturated = mix(vec3(luminance), boosted, saturation);
+            vec3 enhancedColor;
             
-            // Skip pow() operation entirely - use faster linear contrast
-            float contrast = u_isLightBackground ? 0.95 : 0.92;
-            vec3 contrasted = saturated * contrast;
+            if (colorVariation < 1.0) {
+                // Method 1: Vibrant saturation boost
+                float saturation = u_isLightBackground ? 1.5 : 1.7;
+                vec3 saturated = mix(vec3(luminance), color, saturation * u_vibrancy);
+                
+                // High contrast approach
+                float contrast = u_isLightBackground ? 0.9 : 0.85;
+                enhancedColor = max(saturated - vec3(contrast * 0.5 - 0.5), 0.0) / (1.0 - contrast * 0.5);
+                
+                // Add highlights
+                enhancedColor += step(0.7, enhancedColor) * 0.3;
+                
+            } else if (colorVariation < 2.0) {
+                // Method 2: Color temperature shift
+                // Warm colors (shift toward red/yellow)
+                if (color.r > color.b) {
+                    enhancedColor = color * vec3(1.2, 1.1, 0.9);
+                } 
+                // Cool colors (shift toward blue/cyan)
+                else {
+                    enhancedColor = color * vec3(0.9, 1.1, 1.2);
+                }
+                
+                // Smoothstep contrast
+                enhancedColor = smoothstep(0.1, 0.9, enhancedColor);
+                
+            } else {
+                // Method 3: Complementary color accents
+                enhancedColor = color * (1.0 + (1.0 - luminance) * 0.9);
+                
+                // Add subtle complementary color hints
+                vec3 complement = vec3(1.0) - color;
+                enhancedColor = mix(enhancedColor, complement * luminance, 0.15);
+                
+                // Normalize to maintain brightness
+                enhancedColor = enhancedColor / max(max(enhancedColor.r, enhancedColor.g), max(enhancedColor.b, 1.0));
+            }
             
-            // Skip smoothstep highlights - use simple clamping instead
-            contrasted = min(contrasted * 1.15, vec3(1.0));
+            // Apply common processing for all methods
             
-            // Apply final multiplier based on background
-            float finalMultiplier = u_isLightBackground ? 0.95 : 1.05;
-            return contrasted * finalMultiplier;
+            // Apply noise influence for variation
+            enhancedColor *= 1.0 + (noiseValue - 0.5) * 0.2;
+            
+            // Final vibrancy adjustment
+            float finalMultiplier = u_isLightBackground ? 0.95 : 1.15;
+            return enhancedColor * finalMultiplier * (1.0 + (u_vibrancy - 1.0) * 0.3);
         }
 
         lowp vec3 blendColors(lowp vec3 a, lowp vec3 b, lowp float factor) {
-            // PERFORMANCE OPTIMIZATION: Simplified blending with fewer calculations
+            // Multi-mode color blending for greater color variety
             
-            // Simple screen blend
-            lowp vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 0.8);
+            // Use the color properties to select different blending modes
+            float colorKey = a.r + a.g + a.b + b.r + b.g + b.b;
+            float blendMode = mod(colorKey * 8.0, 4.0); // Create 4 distinct blending approaches
             
-            // Simple additive blend
-            lowp vec3 add = min(a + b * factor * 0.3, 1.0);
+            // Core blending modes
+            lowp vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor);
+            lowp vec3 add = min(a + b * factor * 0.5, 1.0);
+            lowp vec3 dodge = a / max(1.0 - b * factor * 0.8, 0.01);
             
-            // Fixed blend factor instead of using sine calculation
-            return mix(screen, add, 0.3);
+            // Additional blend modes for more variety
+            lowp vec3 multiply = a * b * factor * 1.5; // Darker blend
+            lowp vec3 overlay = mix(
+                2.0 * a * b,
+                1.0 - 2.0 * (1.0 - a) * (1.0 - b),
+                step(0.5, a)
+            ) * factor;
+            
+            // Color temperature shift blend
+            lowp vec3 tempShift;
+            if (length(a) > length(b)) {
+                tempShift = mix(a, vec3(a.r * 1.2, a.g * 0.9, a.b * 0.8), factor * 0.5);
+            } else {
+                tempShift = mix(a, vec3(a.r * 0.8, a.g * 0.9, a.b * 1.2), factor * 0.5);
+            }
+            
+            // Select blend mode based on color properties
+            lowp vec3 result;
+            
+            if (blendMode < 1.0) {
+                // Mode 1: Vibrant screen-add blend
+                result = mix(screen, add, 0.4);
+                result = mix(result, dodge, 0.3);
+            } 
+            else if (blendMode < 2.0) {
+                // Mode 2: Rich overlay blend
+                result = mix(overlay, screen, 0.5);
+                result = mix(result, tempShift, 0.3);
+            }
+            else if (blendMode < 3.0) {
+                // Mode 3: Dramatic contrast blend
+                result = mix(dodge, multiply, 0.5);
+                result = mix(result, a, 0.3); // Maintain some original color
+            }
+            else {
+                // Mode 4: Harmonious color shift
+                result = mix(a, tempShift, 0.7);
+                result = mix(result, screen, 0.4);
+            }
+            
+            // Apply vibrancy control
+            return mix(a, result, u_vibrancy * 0.4 + 0.6);
         }
 
         lowp vec2 getFlowDirection(mediump vec2 position, float time) {
@@ -359,6 +481,23 @@
                 simplexNoise(p * 2.0, 123.0),
                 simplexNoise(p * 2.0, 456.0)
             );
+            
+            // RANDOMIZE FLOW: Add rotation to vary the direction
+            // Use a stable seed value based on position and seed
+            float rotSeed = simplexNoise(p * 0.1, u_nS + 789.0);
+            float rotAngle = rotSeed * 6.28318; // Random angle 0-2π
+            
+            // Apply rotation matrix to flow vector
+            float sinRot = sin(rotAngle);
+            float cosRot = cos(rotAngle);
+            flow = vec2(
+                flow.x * cosRot - flow.y * sinRot,
+                flow.x * sinRot + flow.y * cosRot
+            );
+            
+            // Add global directional variation using time
+            float globalDirAngle = sin(time * 0.0001) * 3.14159; // Slowly changes global flow direction
+            flow += 0.2 * vec2(cos(globalDirAngle), sin(globalDirAngle));
             
             // Normalize without expensive operations
             float len = max(length(flow), 0.0001);
@@ -438,61 +577,108 @@
             float angle = atan(scaledCell.y, scaledCell.x);
             float radius = length(scaledCell);
             
-            // Simplified CA settings - use depth to select a pattern directly instead of complex lookup
-            float depthMod = mod(depth, 4.0);
-            float dirBias = 0.2 + depthMod * 0.05;
+            // Enhanced pattern variation based on depth and position - creates more visual complexity
+            float patternVariant = mod(floor(radius) + floor(angle * 2.0) + depth, 8.0); // Increased from 4 to 8 pattern variants
             
-            // Reduce neighbor calculations - only compute if really needed
+            // Reduced neighbor calculations - only compute if really needed
             if (length(id) < 8.0) {
-                // Simplified neighbor calculation
+                // Simplified neighbor calculation with enhanced pattern logic
                 float neighbors = 0.0;
                 
                 // Only calculate 4 immediate neighbors instead of 8
                 vec2 neighbor;
                 float neighborState;
                 
+                // Add unique offset to each neighbor calculation based on pattern variant
+                // This creates different cellular patterns without adding performance cost
+                
                 // Right neighbor
-                neighbor = floor(id + vec2(1.0, 0.0));
+                neighbor = floor(id + vec2(1.0, 0.0) + mod(patternVariant, 2.0) * 0.2);
                 neighborState = step(0.5, noise(neighbor * 0.5, seed));
                 neighbors += neighborState;
                 
                 // Left neighbor
-                neighbor = floor(id + vec2(-1.0, 0.0));
+                neighbor = floor(id + vec2(-1.0, 0.0) + mod(patternVariant + 1.0, 2.0) * 0.2);
                 neighborState = step(0.5, noise(neighbor * 0.5, seed));
                 neighbors += neighborState;
                 
                 // Top neighbor
-                neighbor = floor(id + vec2(0.0, 1.0));
+                neighbor = floor(id + vec2(0.0, 1.0) + mod(patternVariant + 2.0, 2.0) * 0.2);
                 neighborState = step(0.5, noise(neighbor * 0.5, seed));
                 neighbors += neighborState;
                 
                 // Bottom neighbor
-                neighbor = floor(id + vec2(0.0, -1.0));
+                neighbor = floor(id + vec2(0.0, -1.0) + mod(patternVariant + 3.0, 2.0) * 0.2);
                 neighborState = step(0.5, noise(neighbor * 0.5, seed));
                 neighbors += neighborState;
                 
-                // Simplified rule application
-                float depthRule = floor(mod(depth, 2.0));
+                // Enhanced rule application - 8 different pattern types with same computation cost
+                float depthRule = floor(mod(depth + patternVariant, 8.0));
                 
                 if (depthRule < 1.0) {
+                    // Survival-like rule (Conway's Game of Life inspired)
                     float surviveThreshold = 1.5 + sin(angle) * 0.1;
                     state = step(surviveThreshold - 0.1, neighbors) * 
                             step(neighbors, surviveThreshold + 1.1) * state + 
                             step(2.0, neighbors) * 
                             step(neighbors, 3.0) * (1.0 - state);
-                } else {
+                } else if (depthRule < 2.0) {
+                    // Edge detection rule
                     float edgeThreshold = 0.4 + cos(radius) * 0.1;
                     state = step(edgeThreshold, abs(neighbors - 2.0));
+                } else if (depthRule < 3.0) {
+                    // Fractal-like rule
+                    state = step(0.5, fract(neighbors * (1.0 + cos(angle * 4.0) * 0.2)));
+                } else if (depthRule < 4.0) {
+                    // Symmetric pattern rule
+                    state = step(0.5, sin(radius * 3.0 + angle * 4.0) * 0.5 + 0.5);
+                } else if (depthRule < 5.0) {
+                    // Maze-like pattern rule
+                    state = step(0.55, fract(neighbors * radius * 0.2));
+                } else if (depthRule < 6.0) {
+                    // Concentric rings rule
+                    state = step(0.5, sin(radius * 2.0 + neighbors * 0.5) * 0.5 + 0.5);
+                } else if (depthRule < 7.0) {
+                    // Angular sectors rule
+                    state = step(0.5, sin(angle * (3.0 + neighbors) + radius) * 0.5 + 0.5);
+                } else {
+                    // Quantum CA-inspired rule - produces interesting grid patterns
+                    state = step(0.5, fract((sin(radius * 2.0) + cos(angle * 3.0)) * neighbors * 0.3));
                 }
             }
             
-            // Simplified geometric pattern
-            float geoPattern = smoothstep(0.4, 0.6, 
-                sin(radius * (3.0 + depth * 0.5) + angle * (4.0 + depth * 0.3) + depth + seed) * 0.5 + 0.5
-            );
+            // Enhanced geometric pattern with more variation but same computational cost
+            float geoPattern;
             
-            // Simplified blend with geometric pattern
-            float blendFactor = 0.3 + 0.1 * sin(depth);
+            // Use pattern variant to select between 8 different pattern styles (increased from 4)
+            if (patternVariant < 1.0) {
+                // Circular/radial pattern
+                geoPattern = smoothstep(0.4, 0.6, sin(radius * (3.0 + depth * 0.5) + depth) * 0.5 + 0.5);
+            } else if (patternVariant < 2.0) {
+                // Angular/star pattern
+                geoPattern = smoothstep(0.4, 0.6, sin(angle * (4.0 + depth * 0.5) + depth) * 0.5 + 0.5);
+            } else if (patternVariant < 3.0) {
+                // Grid/checkboard pattern
+                geoPattern = step(0.5, fract(scaledCell.x * 0.5) + fract(scaledCell.y * 0.5));
+            } else if (patternVariant < 4.0) {
+                // Combined pattern
+                geoPattern = smoothstep(0.4, 0.6, sin(radius * angle * (1.0 + depth * 0.3) + depth) * 0.5 + 0.5);
+            } else if (patternVariant < 5.0) {
+                // Wave interference pattern
+                geoPattern = step(0.5, sin(scaledCell.x * 2.0) * sin(scaledCell.y * 2.0) * 0.5 + 0.5);
+            } else if (patternVariant < 6.0) {
+                // Spiral pattern
+                geoPattern = smoothstep(0.4, 0.6, sin(radius * 3.0 + angle * 5.0) * 0.5 + 0.5);
+            } else if (patternVariant < 7.0) {
+                // Complex grid pattern
+                geoPattern = step(0.5, fract(sin(scaledCell.x * 3.0) + cos(scaledCell.y * 3.0)));
+            } else {
+                // Frequency modulation pattern
+                geoPattern = step(0.5, sin(radius * (5.0 + sin(angle * 3.0) * 2.0)) * 0.5 + 0.5);
+            }
+            
+            // Blend with geometric pattern - enhanced to use pattern variant and depth more effectively
+            float blendFactor = 0.3 + 0.2 * sin(depth * 1.5 + patternVariant * 0.8);
             return mix(state, geoPattern, blendFactor);
         }
 
@@ -540,21 +726,38 @@
                 sign(fract(distortNoise2 * 2.0) - 0.5) * abs(fract(distortNoise1 * 2.0) - 0.5)
             );
             
-            // Pattern 5: Smooth directional flow with rotation
+            // Pattern 5: Enhanced smooth directional flow with rotation and fractal structure
+            // RANDOMIZE DIRECTION: Add random phase offsets to the directional flow
+            float randomPhaseX = simplexNoise(vec2(gridDistortTime * 0.1), u_nS + 321.0) * 6.28318;
+            float randomPhaseY = simplexNoise(vec2(gridDistortTime * 0.15), u_nS + 654.0) * 6.28318;
+            
             flowPattern = vec2(
-                distortNoise1 * cos(gridDistortTime * 0.2) - distortNoise2 * sin(gridDistortTime * 0.15),
-                distortNoise1 * sin(gridDistortTime * 0.2) + distortNoise2 * cos(gridDistortTime * 0.15)
+                distortNoise1 * cos(gridDistortTime * 0.2 + randomPhaseX) - distortNoise2 * sin(gridDistortTime * 0.15 + randomPhaseY),
+                distortNoise1 * sin(gridDistortTime * 0.2 + randomPhaseY) + distortNoise2 * cos(gridDistortTime * 0.15 + randomPhaseX)
             );
             
-            // Add subtle vorticity
-            float vortexStrength = 0.3;
-            float vortexAngle = atan(coord.y, coord.x) + gridDistortTime * 0.1;
-            vec2 vortexOffset = vec2(
-                cos(vortexAngle) * length(flowPattern) * vortexStrength,
-                sin(vortexAngle) * length(flowPattern) * vortexStrength
-            );
+            // Add interest points for flow to create micro-patterns
+            float microPattern = fract(distortNoise1 * 3.0) * fract(distortNoise2 * 3.0);
+            flowPattern += flowPattern * microPattern * 0.3;
             
-            // Combine flow and vortex with smooth transition
+            // Add subtle vorticity with enhanced fractal structure
+            float vortexStrength = 0.3 + microPattern * 0.2;
+            // Remove radial slices: replace atan-based angle with noise-based angle
+            float vortexAngle = gridDistortTime * 0.1 + 
+                               distortNoise1 * 3.14 * 2.0;
+            
+            // Create multiple vortex scales
+            vec2 vortexOffset = vec2(0.0);
+            for(int i = 0; i < 2; i++) { // Only 2 iterations for performance
+                float scale = i == 0 ? 1.0 : 0.5;
+                float phase = i == 0 ? 0.0 : 2.0;
+                vortexOffset += scale * vec2(
+                    cos(vortexAngle * (1.0 + float(i)*0.5) + phase) * length(flowPattern),
+                    sin(vortexAngle * (1.0 + float(i)*0.5) + phase) * length(flowPattern)
+                ) * vortexStrength;
+            }
+            
+            // Combine flow and enhanced vortex with smooth transition
             smoothFlowPattern = flowPattern + vortexOffset;
             
             // Add progressive movement (modified for more organic flow)
@@ -563,6 +766,38 @@
                 simplexNoise(vec2(flowTime * 0.7, 0.0), 0.0) * 0.15,
                 simplexNoise(vec2(flowTime * 0.8, 1.0), 0.0) * 0.15
             );
+            
+            // Add complex fluid-like swirls using simple math (not expensive noise)
+            float swirls = 0.0;
+            // Use existing distortNoise with slightly different frequency for varied effect
+            swirls = sin(distortNoise1 * 6.28318 + gridDistortTime * 0.2) * 0.5 + 0.5;
+            
+            // Create complex flow patterns with minimal computation
+            // These patterns create zones of divergence and convergence similar to fluid dynamics
+            float zonePattern = fract((coord.x * 0.01 + coord.y * 0.02) * swirls + gridDistortTime * 0.01);
+            
+            // Different zone types create different flow behaviors
+            if (zonePattern < 0.33) {
+                // Divergent zone - flow pushes outward
+                smoothFlowPattern += normalize(smoothFlowPattern) * 0.1;
+            } else if (zonePattern < 0.66) {
+                // Convergent zone - flow pulls inward
+                smoothFlowPattern -= normalize(smoothFlowPattern) * 0.1;
+            } else {
+                // Rotational zone - flow rotates
+                vec2 perpFlow = vec2(-smoothFlowPattern.y, smoothFlowPattern.x);
+                smoothFlowPattern = mix(smoothFlowPattern, perpFlow, 0.2);
+            }
+            
+            // Add turbulence with minimal computation using time-shifted coordinates
+            float turbulence = sin(coord.x * 0.02 + coord.y * 0.03 + gridDistortTime * 0.1) * 
+                               cos(coord.y * 0.02 - coord.x * 0.01 + gridDistortTime * 0.15);
+            
+            // Scale and apply turbulence effect to smooth flow
+            smoothFlowPattern += vec2(
+                sin(turbulence * 3.14159),
+                cos(turbulence * 3.14159)
+            ) * 0.1;
             
             // Select pattern based on uniform
             vec2 finalPattern = smoothFlowPattern;
@@ -651,16 +886,33 @@
                 min(float(u_maxDepth), float(MAX_LOOP_DEPTH))
             ));
             
-            // Pre-calculate threshold and blend factor outside loop
+            // Pre-calculate threshold and blend factor outside loop with enhanced pattern variation
             float threshold = 0.55 - (0.15 * pow(1.0 - u_bS, 2.0));
             
+            // Create more interesting time-based pattern transitions
+            float timeRatio = fract(u_time * 0.0005);
+            float timePhase = sin(timeRatio * 6.28318) * 0.5 + 0.5;
+            
+            // Enhanced blend factors with more artistic transitions
             float t = simplexNoise(vec2(u_time * 0.01), 0.0) * 0.5 + 0.5;
             float angleInfluence = simplexNoise(vec2(u_time * 0.005), 0.0) * 0.5 + 0.5;
-            float blendFactor = t * t * (3.0 - 2.0 * t) * (1.0 + combinedNoise * 0.8 + angleInfluence * 1.2);
             
-            // Prepare edge values for color transitions
-            float edge0 = 0.2 + sin(u_time * 0.0002) * 0.3;
-            float edge1 = 0.8 + cos(u_time * 0.0002) * 0.5;
+            // Create complex blend pattern using simple math (not expensive noise)
+            float complexBlend = t * t * (3.0 - 2.0 * t);
+            // REMOVE RADIAL SLICES: Replace angular division with smoother gradient
+            complexBlend = mix(
+                complexBlend,
+                1.0 - complexBlend,
+                smoothstep(0.3, 0.7, fract(timePhase)) // Remove atan calculation
+            );
+            
+            // Final blend factor with local variations for more pattern diversity
+            float blendFactor = complexBlend * (1.0 + combinedNoise * 0.8 + angleInfluence * 1.2);
+            
+            // Enhanced edge values for color transitions - more dynamic ranges
+            float edgeRange = 0.4 + t * 0.2;
+            float edge0 = 0.5 - edgeRange * 0.5 + sin(u_time * 0.0002) * 0.15;
+            float edge1 = 0.5 + edgeRange * 0.5 + cos(u_time * 0.0002) * 0.15;
             
             // Get flow direction for current cell
             vec2 flowDir = getFlowDirection(cellCenter, u_time);
@@ -719,12 +971,44 @@
                 // Skip empty areas
                 if (!insideGlyph) continue;
                 
-                // Restore original color blending logic
-                colorT = smoothstep(edge0, edge1, depthFactor + baseNoise * 0.9);
+                // Enhanced color selection with more variety
+                // Use depth, pattern value, and position to create more diverse color choices
+                float colorVariationFactor = fract(pattern * 5.0 + depthFactor * 3.0 + length(glyphCell) * 0.1);
+                float colorOffset = 0.0;
                 
-                // Get colors with minimal parameter passing
-                color1 = getColorFromPalette(colorT);
-                color2 = getColorFromPalette(1.0 - colorT);
+                // Create 5 different color selection approaches for more variety
+                int colorMode = int(mod(colorVariationFactor * 5.0, 5.0));
+                
+                if (colorMode == 0) {
+                    // Standard smooth transition
+                    colorT = smoothstep(edge0, edge1, depthFactor + baseNoise * 0.9);
+                } 
+                else if (colorMode == 1) {
+                    // Contrasting colors
+                    colorT = 1.0 - smoothstep(edge0, edge1, depthFactor + baseNoise * 0.7);
+                    colorOffset = 0.3; // Shift color selection
+                }
+                else if (colorMode == 2) {
+                    // Pattern-driven color
+                    colorT = pattern * 2.0 * smoothstep(0.0, 1.0, depthFactor);
+                    colorOffset = 0.5; // Different palette region
+                }
+                else if (colorMode == 3) {
+                    // Position-based coloring
+                    colorT = fract(length(glyphCell * 0.1) + depthFactor * 0.8);
+                    colorOffset = 0.7; // Another palette region
+                }
+                else {
+                    // Angular variation
+                    // Remove radial slices: replace angle-based calculation with noise-based one
+                    float positionFactor = length(glyphCell) * 0.1 + depthFactor * 0.8;
+                    colorT = positionFactor * 1.5 + depthFactor * 0.6;
+                    colorOffset = 0.9; // Different palette region
+                }
+                
+                // Get colors with more diverse parameter passing
+                color1 = getColorFromPalette(colorT + colorOffset);
+                color2 = getColorFromPalette(1.0 - colorT + colorOffset * 0.5);
                 
                 // Apply original depth boost
                 float depthBoost = 1.2 + (1.0 - depthFactor) * 0.8;
@@ -737,6 +1021,49 @@
                 
                 // Use the proper blendColors function for correct visual appearance
                 blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
+                
+                // Add color complexity with subtle overlays based on depth and pattern
+                if (depth > 0) {
+                    // Apply subtle color overlays for deeper layers only
+                    
+                    // Create overlay color based on pattern and position
+                    vec3 overlayColor;
+                    
+                    // Use pattern information to create interesting overlays
+                    if (pattern > 0.7) {
+                        // High pattern values get warm overlay
+                        overlayColor = vec3(1.0, 0.8, 0.6) * depthFactor;
+                    } else if (pattern < 0.3) {
+                        // Low pattern values get cool overlay
+                        overlayColor = vec3(0.6, 0.8, 1.0) * depthFactor;
+                    } else {
+                        // Mid pattern values get neutral overlay
+                        overlayColor = vec3(0.8) * depthFactor;
+                    }
+                    
+                    // Apply overlay with screen blend for subtle effect
+                    blendedColor = mix(
+                        blendedColor,
+                        1.0 - (1.0 - blendedColor) * (1.0 - overlayColor),
+                        0.2
+                    );
+                    
+                    // Add subtle color accents based on depth
+                    if (depth == 1) {
+                        // Second layer gets subtle highlights based on position
+                        float highlightIntensity = fract(length(glyphCell) * 0.3) * 0.15;
+                        blendedColor += vec3(highlightIntensity, highlightIntensity * 0.8, highlightIntensity * 0.6);
+                    } else if (depth == 2) {
+                        // Third layer gets subtle color shift
+                        // Remove radial slice: replace angular calculation with noise-based one
+                        float shiftFactor = fract(length(glyphCell) * 0.2 + depthFactor * 0.5) * 0.15;
+                        blendedColor = mix(
+                            blendedColor,
+                            blendedColor.brg, // Subtle color channel swap
+                            shiftFactor
+                        );
+                    }
+                }
                 
                 // Blend with original alpha factor calculation for correct transparency
                 float alphaFactor = 1.0 - depthNoiseValue * 0.7;
@@ -776,7 +1103,7 @@
         let stT = 0;
         let cuT = 0;
         let lum = 1.5;
-        let vib = 2.5;
+        let vib = 3.5; // Increased from 2.5 for more vibrant colors
         let soS = 0.1;     
         let soF = 0.1;   
         let soA = 0.15;     
@@ -1423,7 +1750,7 @@
                 [0.90, 0.87, 0.82, 1.0]    
             ];
             
-            let sBaC = baC[R.D() < 0.6 ? 0 : 1];
+            let sBaC = baC[R.D() < 0.7 ? 0 : 1];
             let liBc = sBaC[0] > 0.5;
 
             // Efficiently set all uniform values using our cached function
