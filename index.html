@@ -828,25 +828,17 @@
         let currentFPS = 60;        // Track current FPS
         let fpsUpdateTime = 0;      // Time of last FPS update
         const FPS_UPDATE_INTERVAL = 500; // Update FPS every 500ms
-        const MIN_FPS_THRESHOLD = 20;    // Minimum FPS threshold for lowest quality
-        const MID_FPS_THRESHOLD = 40;    // Medium FPS threshold for medium quality
-        const PERFORMANCE_CHECK_INTERVAL = 2000; // Check performance every 2 seconds
-        let lastPerformanceCheck = 0;    // Time of last performance check
-        let currentPixelDensity;         // Track current pixel density
-        let lastPixelDensityChange = 0;  // Track when we last changed pixel density
-        const MIN_DENSITY_CHANGE_INTERVAL = 5000; // Minimum time between density changes (5 seconds)
+        
+        // Variables related to canvas and WebGL
         let canvasElement;               // Reference to canvas element
         let glContext;                   // Cached reference to WebGL context
         
-        // Pre-allocate arrays for better memory management
-        const PREALLOCATED_ARRAY_SIZE = 1000;
-        const recordingChunkPool = [];   // Pool of pre-allocated chunks for recording
-        let recordingChunkIndex = 0;     // Current index in the recording chunk pool
-        
-        // Memory management flags
-        let isMemoryCleanupScheduled = false;
+        // Memory management variables
         const MEMORY_CLEANUP_INTERVAL = 30000; // Run memory cleanup every 30 seconds
         let lastMemoryCleanup = 0;
+        let isMemoryCleanupScheduled = false;
+        const recordingChunkPool = [];   // Pool of pre-allocated chunks for recording
+        let recordingChunkIndex = 0;     // Current index in the recording chunk pool
         let isTabVisible = true; // Track tab visibility for better performance
 
         // Handle visibility changes to pause rendering when tab not active
@@ -1321,9 +1313,8 @@
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.hint(gl.GENERATE_MIPMAP_HINT, gl.FASTEST);
             
-            // Initialize pixel density
-            currentPixelDensity = 2;
-            pixelDensity(currentPixelDensity);
+            // Set fixed pixel density
+            pixelDensity(2);
             
             // Pre-allocate recording chunk pool if WebM recording is supported
             if (typeof MediaRecorder !== 'undefined') {
@@ -1550,38 +1541,12 @@
             
             lastRenderTime = now;
             
-            // FPS Calculation
+            // FPS Calculation (keep this for monitoring only)
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
-            }
-            
-            // Rest of the draw function remains unchanged
-            // Performance monitoring and adaptation
-            if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
-                lastPerformanceCheck = now;
-                
-                // Only adjust if enough time has passed since last change
-                if (now - lastPixelDensityChange > MIN_DENSITY_CHANGE_INTERVAL) {
-                    let targetDensity;
-                    
-                    // Set quality based on performance
-                    if (currentFPS <= MIN_FPS_THRESHOLD) {
-                        targetDensity = 1.0;
-                    } else if (currentFPS <= MID_FPS_THRESHOLD) {
-                        targetDensity = 1.5;
-            } else {
-                        targetDensity = 2.0;
-                    }
-                    
-                    // Only change if target is different from current
-                    if (targetDensity !== currentPixelDensity) {
-                        currentPixelDensity = targetDensity;
-                        pixelDensity(currentPixelDensity);
-                        lastPixelDensityChange = now;
-                        console.log('Adjusting pixel density to:', currentPixelDensity, 'FPS:', currentFPS.toFixed(1));
-                    }
-                }
+                // Log FPS to console for monitoring
+                console.log('Current FPS:', currentFPS.toFixed(1));
             }
             
             // Periodic memory cleanup
