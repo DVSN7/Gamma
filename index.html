@@ -281,109 +281,88 @@
         }
 
         lowp vec3 getColorFromPalette(float t) {
-            t = clamp(t, 0.0, 4.0) * 7.0;
-            int segment = int(t);
-            float frac = t - float(segment);
-            float phase = float(segment) / 7.0;
+            // PERFORMANCE OPTIMIZATION: Simplified palette with fewer trig functions
             
-            vec3 color1, color2;
+            // Constrain input and use linear mapping
+            t = clamp(t, 0.0, 4.0) * 2.0;
             
-            // Use the random colors passed from JavaScript
-                    color1 = mix(
-                mix(u_randomColor1, u_randomColor2, sin(phase * 6.28318) * 0.5 + 0.5),
-                u_randomColor3,
-                        cos(phase * 9.42477) * 0.5 + 0.5
-                    );
-                    color2 = mix(
-                mix(u_randomColor2, u_randomColor3, cos(phase * 12.56636) * 0.5 + 0.5),
-                u_randomColor1,
-                        sin(phase * 15.70796) * 0.5 + 0.5
-                    );
+            // Use simpler interpolation factors without sine/cosine
+            float f1 = fract(t);
+            float f2 = fract(t + 0.33);
+            float f3 = fract(t * 1.5);
             
-            return mix(color1, color2, smoothstep(0.1, 0.9, frac));
+            // Much faster linear combinations of the colors
+            vec3 color1 = mix(u_randomColor1, u_randomColor2, f1) * 0.6 + 
+                           u_randomColor3 * 0.4 * f2;
+                           
+            vec3 color2 = mix(u_randomColor2, u_randomColor3, f3) * 0.7 + 
+                           u_randomColor1 * 0.3 * (1.0-f1);
+            
+            // Simple smoothstep for final blend
+            return mix(color1, color2, smoothstep(0.2, 0.8, fract(t)));
         }
 
         lowp vec3 enhanceColor(vec3 color, float noiseValue) {
-            const vec3 LUM_WEIGHTS = vec3(0.333, 0.333, 0.334);
-            float luminance = dot(color, LUM_WEIGHTS);
+            // PERFORMANCE OPTIMIZATION: Simplified color enhancement with fewer operations
             
-            // Adjust enhancement based on background setting
-            float noiseInfluence = 1.0 + noiseValue * (u_isLightBackground ? 0.02 : 0.04); // lower influence
-            vec3 boosted = color * (1.0 + (1.0 - luminance) * noiseInfluence);
+            // Simple luminance calculation (same weights for all channels for speed)
+            float luminance = (color.r + color.g + color.b) * 0.333;
             
-            // Adjust saturation based on background
-            float saturationStrength = u_isLightBackground ? 1.1 : 1.2; // lower influence
-            vec3 saturated = mix(
-                vec3(luminance),
-                boosted,
-                vec3(saturationStrength)
-            );
+            // Fast brightness boost based on luminance
+            vec3 boosted = color * (1.0 + (1.0 - luminance) * 0.5);
             
-            float contrastPower = u_isLightBackground ? 0.95 : 0.92; // lower influence
-            vec3 contrasted = pow(saturated, vec3(contrastPower));
+            // Fast saturation adjustment without complex operations
+            float saturation = u_isLightBackground ? 1.15 : 1.25;
+            vec3 saturated = mix(vec3(luminance), boosted, saturation);
             
-            float highlightThreshold = u_isLightBackground ? 0.95 : 0.92; // lower influence
-            vec3 highlights = smoothstep(highlightThreshold, 1.0, contrasted);
-            contrasted = mix(contrasted, highlights * 0.9, 0.6); // higher influence
-
-            // Final multiplier based on background
-            float finalMultiplier = u_isLightBackground ? 0.95 : 1.05; // lower influence
+            // Skip pow() operation entirely - use faster linear contrast
+            float contrast = u_isLightBackground ? 0.95 : 0.92;
+            vec3 contrasted = saturated * contrast;
+            
+            // Skip smoothstep highlights - use simple clamping instead
+            contrasted = min(contrasted * 1.15, vec3(1.0));
+            
+            // Apply final multiplier based on background
+            float finalMultiplier = u_isLightBackground ? 0.95 : 1.05;
             return contrasted * finalMultiplier;
         }
 
         lowp vec3 blendColors(lowp vec3 a, lowp vec3 b, lowp float factor) {
-            // Screen blend can use low precision
+            // PERFORMANCE OPTIMIZATION: Simplified blending with fewer calculations
+            
+            // Simple screen blend
             lowp vec3 screen = 1.0 - (1.0 - a) * (1.0 - b * factor * 0.8);
             
-            // Addition blend can use low precision
-            lowp vec3 add = a + b * factor * 0.3;
+            // Simple additive blend
+            lowp vec3 add = min(a + b * factor * 0.3, 1.0);
             
-            // Rotation influence calculation
-            lowp float rotationInfluence = (1.0 + sin(u_roA + u_time * 0.1)) * 0.5;
-            
-            return mix(screen, add, 2.5 + rotationInfluence);
+            // Fixed blend factor instead of using sine calculation
+            return mix(screen, add, 0.3);
         }
 
         lowp vec2 getFlowDirection(mediump vec2 position, float time) {
-            lowp float slowTime = time * u_sortAnimSpeed * 0.05;
+            // PERFORMANCE OPTIMIZATION: Ultra-simplified flow direction with minimal noise samples
             
-            // OPTIMIZATION: Remove domain warping completely for better performance
-            vec2 p = position * 0.01;
+            // Scale position and use slower time for more stable flow
+            lowp float slowTime = time * 0.01;
+            vec2 p = position * 0.005;
             
-            // Use position directly without any warping
-            vec2 warped = p;
+            // Single octave noise for x and y direction
+            float noiseX1 = simplexNoise(p + vec2(slowTime, 0.0), 0.0);
+            float noiseY1 = simplexNoise(p + vec2(0.0, slowTime * 1.1), 0.0);
             
-            // Multi-octave flow field
-            vec2 flow = vec2(0.0);
-            float amplitude = 1.0;
-            float frequency = 1.0;
+            // Create a simple flow direction
+            vec2 flow = vec2(noiseX1 - 0.5, noiseY1 - 0.5);
             
-            // Reduce octave count from 4 to 2 for better performance
-            for(int i = 0; i < 2; i++) {
-                // Calculate noise gradient for this octave
-                float noiseVal = simplexNoise(warped * frequency, slowTime * frequency * 0.2);
-                float noiseX = simplexNoise(warped * frequency + vec2(0.01, 0.0), slowTime * frequency * 0.2);
-                float noiseY = simplexNoise(warped * frequency + vec2(0.0, 0.01), slowTime * frequency * 0.2);
-                
-                // Approximate gradient
-                vec2 noiseGrad = vec2(noiseX - noiseVal, noiseY - noiseVal) * 100.0;
-                
-                // Rotate gradient based on octave
-                float octaveAngle = float(i) * 0.7 + slowTime * 0.1;
-                vec2 rotatedGrad = vec2(
-                    noiseGrad.x * cos(octaveAngle) - noiseGrad.y * sin(octaveAngle),
-                    noiseGrad.x * sin(octaveAngle) + noiseGrad.y * cos(octaveAngle)
-                );
-                
-                // Add to flow with amplitude scaling
-                flow += rotatedGrad * amplitude;
-                
-                // Update for next octave
-                frequency *= 2.0;
-                amplitude *= 0.5;
-            }
+            // Add some static variation
+            flow += 0.3 * vec2(
+                simplexNoise(p * 2.0, 123.0),
+                simplexNoise(p * 2.0, 456.0)
+            );
             
-            return normalize(flow);
+            // Normalize without expensive operations
+            float len = max(length(flow), 0.0001);
+            return flow / len;
         }
 
         // Add this function before getGlyphPattern
@@ -519,7 +498,7 @@
 
         void main() {
             // Constants can use low precision
-            const lowp int MAX_LOOP_DEPTH = 4; // Reduced from 6 for better performance
+            const lowp int MAX_LOOP_DEPTH = 3; // Reduced from 4 to 3 for even better performance
             
             // Coordinate calculations need medium precision
             mediump vec2 coord = (vTexCoord * u_resolution - u_resolution * 0.25) * u_scaleFactor + u_translation;
@@ -586,34 +565,13 @@
             );
             
             // Select pattern based on uniform
-            vec2 finalPattern;
-            if (u_currentPattern == 5) {
-                finalPattern = smoothFlowPattern;
-            } else if (u_currentPattern == 0) {
-                // Mixed patterns with smooth transitions
-                float patternMix = fract(gridDistortTime * 0.1);
-                finalPattern = mix(
-                    mix(expPattern, stepPattern, smoothstep(0.0, 0.33, patternMix)),
-                    mix(circularPattern, squarePattern, smoothstep(0.66, 1.0, patternMix)),
-                    smoothstep(0.33, 0.66, patternMix)
-                );
-            } else if (u_currentPattern == 1) {
-                finalPattern = expPattern;
-            } else if (u_currentPattern == 2) {
-                finalPattern = stepPattern;
-            } else if (u_currentPattern == 3) {
-                finalPattern = circularPattern;
-            } else {
-                finalPattern = squarePattern;
-            }
+            vec2 finalPattern = smoothFlowPattern;
             
             // Apply grid distortion only if enabled
-            mediump vec2 gridOffset = vec2(0.0);
-            if (u_enableGridDistort) {
-                gridOffset = finalPattern * u_sortStrength * u_cellSize;
-                // Apply distortion to coordinates before grid calculation
-                coord += gridOffset * (1.0 + sin(gridDistortTime) * 0.3);
-            }
+            mediump vec2 gridOffset = finalPattern * u_sortStrength * u_cellSize;
+            
+            // Simplify the coordinate adjustment (unconditional for performance)
+            coord += gridOffset * (1.0 + sin(gridDistortTime) * 0.3);
             
             vec2 gridCoord = floor(coord / u_cellSize);
             vec2 cellCenter = (gridCoord + 0.5) * u_cellSize;
