@@ -1318,80 +1318,29 @@
             
             // Use existing shader if available, otherwise create it
             if (!tS) {
-            tS = createShader(
-                document.getElementById('vertex-shader').textContent,
-                document.getElementById('fragment-shader').textContent
-            );
+                tS = createShader(
+                    document.getElementById('vertex-shader').textContent,
+                    document.getElementById('fragment-shader').textContent
+                );
             }
             shader(tS);
             
-            // Apply optimized WebGL rendering setup
-            optimizeGLRendering();
+            if (!inscription_id) {
+                return;
+            }
             
-            // Force initialize default values
-            nS = nS || Math.floor(Math.random() * 1000);
-            rSS = rSS || Math.floor(Math.random() * 1000);
-            roA = roA || Math.floor(Math.random() * 360);
-            cuP = typeof cuP !== 'undefined' ? cuP : Math.floor(Math.random() * 5);
-            bN = bN || 0.002;
-            fS = fS || 0.005;
-            lum = lum || 1.5;
-            vib = vib || 2.5;
-            soS = soS || 0.1;
-            soF = soF || 0.1;
-            soA = soA || 0.15;
-            bS = bS || 1.0;
+            cuP = R.I(0, 5);
             
-            // Initialize essential uniforms with defaults to avoid black screen
-            setShaderUniform('u_maxDepth', 6);
-            setShaderUniform('u_nS', nS);
-            setShaderUniform('u_rSS', rSS);
-            setShaderUniform('u_roA', radians(roA));
-            setShaderUniform('u_nOS', [nOX || 0, nOY || 0]);
-            setShaderUniform('u_amplitude', 0.1);
-            setShaderUniform('u_initialFreq', 0.0005);
-            setShaderUniform('u_baseModulation', 1.0);
-            setShaderUniform('u_baseColor', [0.05, 0.05, 0.05, 1.0]);
-            setShaderUniform('u_isLightBackground', false);
-            setShaderUniform('u_randomColor1', [0.8, 0.2, 0.3]);
-            setShaderUniform('u_randomColor2', [0.2, 0.7, 0.9]);
-            setShaderUniform('u_randomColor3', [0.9, 0.8, 0.1]);
-            setShaderUniform('u_luminosity', lum);
-            setShaderUniform('u_vibrancy', vib);
-            setShaderUniform('u_sortStrength', soS);
-            setShaderUniform('u_sortFrequency', soF);
-            setShaderUniform('u_sortAnimSpeed', soA);
-            setShaderUniform('u_caScaleVariation', 0.5);
+            // Set current pattern immediately for better state tracking
+            setShaderUniform('u_currentPattern', cuP, 'currentPattern');
             
-            // These uniforms need to be set every frame, but initialize them here too
-            setShaderUniform('u_bS', bS);
-            setShaderUniform('u_scaleFactor', scF || 30);
-            setShaderUniform('u_translation', [tX || 0, tY || 0]);
-            setShaderUniform('u_resolution', [width, height]);
-            setShaderUniform('u_time', 0);
-            setShaderUniform('u_cellSize', (height / cV) * bS);
-            setShaderUniform('u_flowSpeed', fS);
-            setShaderUniform('u_currentPattern', cuP);
-            setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
-            
-            // Initialize feature toggle uniforms
-            setShaderUniform('u_enableDomainWarp', true);
-            setShaderUniform('u_enableLayeredNoise', true);
-            setShaderUniform('u_enableFlowFields', true);
-            setShaderUniform('u_enableGlyphNoise', true);
-            setShaderUniform('u_enableGridDistort', true);
-            setShaderUniform('u_enableGlyphNoiseDetail', true);
-            
-            if (inscription_id) {
-                // Original initialization for specific inscription
             upCS();
             
-                // Setup event handlers with optimized implementation
-                suEH();
-    
-                nOX = R.I(0,2000);
-                nOY = R.I(0,2000);
-                setShaderUniform('u_nOS', [nOX, nOY]);
+            // Setup event handlers with optimized implementation
+            suEH();
+            
+            nOX = R.I(0,2000)
+            nOY = R.I(0,2000)
 
             let shiftX = -width/2;
             let shiftY = -height/2;
@@ -1399,38 +1348,24 @@
             iTY = shiftY;
             tX = shiftX;
             tY = shiftY;
-                setShaderUniform('u_translation', [tX, tY]);
-    
-                // Override random values for this inscription
-                nS = R.I(0,1000);
-                rSS = R.I(0,1000);
-                roA = R.I(0, 360);
-                cuP = R.I(0, 5);
-                
-                // Update uniforms with inscription-specific values
-                setShaderUniform('u_nS', nS);
-                setShaderUniform('u_rSS', rSS);
-                setShaderUniform('u_roA', radians(roA));
-                setShaderUniform('u_currentPattern', cuP);
+
+            nS = R.I(0,1000)
+            rSS = R.I(0,1000)
+            roA = R.I(0, 360)
             
             let teR = R.I(0, amV.length - 1);
             let raA = amV[teR];
-                setShaderUniform('u_amplitude', raA);
             
             let inF = [0.0005, 0.0001, 0.005];
             let seF = inF[R.I(0,2)];
-                setShaderUniform('u_initialFreq', seF);
             
             cS = windowHeight / cV;
             
             let noSO = [0.005, 0.003, 0.001];
             bN = noSO[R.I(0, 2)];  
-                setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
 
             let baM = R.N(0.5, 2.0);  
-                setShaderUniform('u_baseModulation', baM);
-
-                // Color generation
+            
             function caCD(color1, color2) {
                 const dr = color1[0] - color2[0];
                 const dg = color1[1] - color2[1];
@@ -1507,11 +1442,6 @@
             let rC2 = miR.color;  
             
             let rC3 = geRC('dark', null, [rC1, rC2]).color;  
-
-                // Update color uniforms with inscription-specific colors  
-                setShaderUniform('u_randomColor1', rC1);
-                setShaderUniform('u_randomColor2', rC2);
-                setShaderUniform('u_randomColor3', rC3);
             
             let baC = [
                 [0.05, 0.05, 0.05, 1.0],  
@@ -1521,35 +1451,48 @@
             let sBaC = baC[R.D() < 0.6 ? 0 : 1];
             let liBc = sBaC[0] > 0.5;
 
-                setShaderUniform('u_baseColor', sBaC);
-                setShaderUniform('u_isLightBackground', liBc);
-                
-                let cASV = R.N(1.5, 3.0);
-                setShaderUniform('u_caScaleVariation', cASV);
-            } else {
-                // Generic setup for no inscription
-                upCS();
-                suEH();
-                
-                // Set default scale and position
-            scF = 30;
-                tX = -width/2;
-                tY = -height/2;
-                iTX = tX;
-                iTY = tY;
+            // Efficiently set all uniform values using our cached function
+            // Set static uniforms that rarely/never change
+            setShaderUniform('u_nS', nS);
+            setShaderUniform('u_rSS', rSS);
+            setShaderUniform('u_roA', radians(roA));
+            setShaderUniform('u_nOS', [nOX, nOY]);
+            setShaderUniform('u_amplitude', raA);
+            setShaderUniform('u_maxDepth', 6);
+            setShaderUniform('u_initialFreq', seF);
+            setShaderUniform('u_baseModulation', baM);
+            setShaderUniform('u_baseColor', sBaC);
+            setShaderUniform('u_isLightBackground', liBc);
+            
+            // Set color values
+            setShaderUniform('u_randomColor1', rC1);
+            setShaderUniform('u_randomColor2', rC2);
+            setShaderUniform('u_randomColor3', rC3);
+            
+            // Set dynamic uniforms
+            setShaderUniform('u_luminosity', lum);
+            setShaderUniform('u_vibrancy', vib);
+            setShaderUniform('u_sortStrength', soS);
+            setShaderUniform('u_sortFrequency', soF);
+            setShaderUniform('u_sortAnimSpeed', soA);
+            
+            // Original code didn't set these flags explicitly, so we'll remove them
+            // to maintain the original visual output
 
-                // Update these in the shader too
-                setShaderUniform('u_scaleFactor', scF);
-                setShaderUniform('u_translation', [tX, tY]);
-            }
+            scF = 30;
+            upTC();
+
+            suEH();
 
             stT = millis();  
+            
+            let cASV = R.N(1.5, 3.0);  
+            setShaderUniform('u_caScaleVariation', cASV);
         }
 
         function draw() {
             // Skip rendering when tab is not visible
             if (!isTabVisible) {
-                console.log("Tab not visible, skipping render");
                 return;
             }
             
@@ -1567,7 +1510,6 @@
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
-                console.log("FPS:", currentFPS.toFixed(1));
             }
             
             // Performance monitoring and adaptation
@@ -1610,22 +1552,9 @@
             // Update last frame time with adjustment to maintain consistent frame timing
             lastFrameTime = now - (elapsed % frameInterval);
             
-            // Clear buffer with minimal overhead - add background for visibility
+            // Clear buffer with minimal overhead
             clear();
-            background(0); // Restore background to ensure visibility
-            
-            // Check if WebGL context is valid - recover if not
-            if (!glContext || glContext.isContextLost()) {
-                console.error("WebGL context lost, attempting to recover");
-                // Try to reinitialize if context is lost
-                if (canvasElement) {
-                    glContext = canvasElement.getContext('webgl');
-                    if (glContext) {
-                        optimizeGLRendering();
-                    }
-                }
-                return; // Skip this frame if we're trying to recover
-            }
+            background(0);  
             
             // Synchronized time handling
             if (isP) {
@@ -1649,160 +1578,45 @@
 
             let scT = cuT; 
 
-            // Ensure shader is bound correctly
-            if (!tS) {
-                console.error("Shader not initialized");
-                // Recreate shader if it's null
-                tS = createShader(
-                    document.getElementById('vertex-shader').textContent,
-                    document.getElementById('fragment-shader').textContent
-                );
-            }
-            shader(tS);
+            // Update uniform values efficiently with caching
+            setShaderUniform('u_bS', bS);
+            setShaderUniform('u_scaleFactor', scF);
+            setShaderUniform('u_translation', [tX, tY]);
+            setShaderUniform('u_resolution', [width, height]);
+            setShaderUniform('u_time', scT);
             
-            // Batch update uniform values to minimize WebGL state changes
-            // Use optimal shader uniform updates with caching to prevent redundant WebGL calls
-            const uniforms = {
-                'u_bS': bS,
-                'u_scaleFactor': scF,
-                'u_translation': [tX, tY],
-                'u_resolution': [width, height],
-                'u_time': scT,
-                'u_cellSize': (height / cV) * bS,
-                'u_flowSpeed': fS,
-                'u_luminosity': lum,
-                'u_vibrancy': vib,
-                'u_sortStrength': soS,
-                'u_sortFrequency': soF,
-                'u_sortAnimSpeed': soA,
-                'u_currentPattern': cuP,
-                'u_noiseScale': bN * (100.0 / floor(height / cV)),
-                'u_caScaleVariation': 0.5
-            };
+            // Calculate cellSize only once
+            const cellSize = (height / cV) * bS;
+            setShaderUniform('u_cellSize', cellSize);
             
-            // Log key uniforms for debugging
-            if (frameCount % 300 === 0) {
-                console.log("Key uniforms:", {
-                    resolution: uniforms['u_resolution'],
-                    time: uniforms['u_time'],
-                    cellSize: uniforms['u_cellSize']
-                });
-            }
+            setShaderUniform('u_flowSpeed', fS);
+            setShaderUniform('u_luminosity', lum);
+            setShaderUniform('u_vibrancy', vib);
+            setShaderUniform('u_sortStrength', soS);
+            setShaderUniform('u_sortFrequency', soF);
+            setShaderUniform('u_sortAnimSpeed', soA);
             
-            try {
-                // Update all uniforms at once to reduce shader binding state changes
-                updateShaderUniforms(uniforms);
-                
-                // Use our optimized rendering function with fallbacks
-                renderFullscreenQuad();
-            } catch (e) {
-                console.error("Error during rendering:", e);
-                // Use most basic rendering as ultimate fallback
-                rect(0, 0, width, height);
-            }
+            // Don't need to update pattern if it hasn't changed
+            setShaderUniform('u_currentPattern', cuP);
+            
+            // Calculate noise scale more efficiently
+            let cSP = height / cV;
+            let dySN = bN * (100.0 / floor(cSP)); 
+            setShaderUniform('u_noiseScale', dySN);
 
-            if (isR && (millis() - reST > reDu)) {
-                noRe();
-            }
-        }
-        
-        // Efficient batch update of shader uniforms
-        function updateShaderUniforms(uniformsObj) {
-            // Ensure shader is bound only once
-            shader(tS);
+            // Only update CA scale variation when needed
+            setShaderUniform('u_caScaleVariation', 0.5);
             
-            // Update all uniforms in a batch
-            for (const [name, value] of Object.entries(uniformsObj)) {
-                // Use our existing caching function to skip redundant updates
-                setShaderUniform(name, value);
-            }
-        }
-        
-        // Optimized function to render a fullscreen quad with minimal state changes
-        function renderFullscreenQuad() {
-            if (!glContext) {
-                console.error("No GL context for rendering fullscreen quad");
-                return;
-            }
-            
-            try {
-                // Use WebGL directly for more efficient rendering when possible
-                if (glContext.isOptimizedRenderingEnabled && false) { // Temporarily disable direct path
-                    console.log("Using optimized rendering path");
-                    // Direct WebGL rendering path (when available)
-                    glContext.drawArrays(glContext.TRIANGLE_FAN, 0, 4);
-                } else {
-                    // Fallback to p5's rendering path with minimal vertex data
+            // Revert to original quad drawing method to maintain exact visual output
             beginShape();
             vertex(0, 0, 0, 0, 0);
             vertex(2, 0, 0, 1, 0);
             vertex(2, 2, 0, 1, 1);
             vertex(0, 2, 0, 0, 1);
             endShape(CLOSE);
-                }
-            } catch (e) {
-                console.error("Error in renderFullscreenQuad:", e);
-                // Ultimate fallback
-                rect(0, 0, width, height);
-            }
-        }
-
-        // Modified optimizeGLRendering to enable faster draw paths
-        function optimizeGLRendering() {
-            // Ensure WebGL context is valid
-            if (!glContext) {
-                console.error("No WebGL context found when optimizing");
-                if (canvasElement) {
-                    try {
-                        glContext = canvasElement.getContext('webgl');
-                    } catch (e) {
-                        console.error("Failed to get WebGL context:", e);
-                        return;
-                    }
-                }
-                if (!glContext) return;
-            }
             
-            // Reset WebGL context state to known good values
-            try {
-                // Optimize WebGL state for this specific renderer
-                glContext.disable(glContext.DEPTH_TEST);
-                glContext.disable(glContext.CULL_FACE);
-                glContext.disable(glContext.DITHER);
-                glContext.disable(glContext.STENCIL_TEST);
-                
-                // Enable blend mode optimized for our 2D rendering
-                glContext.enable(glContext.BLEND);
-                glContext.blendFunc(glContext.SRC_ALPHA, glContext.ONE_MINUS_SRC_ALPHA);
-                
-                // Set rendering hints
-                glContext.hint(glContext.GENERATE_MIPMAP_HINT, glContext.FASTEST);
-                
-                // Create vertex buffer for more efficient quad rendering
-                const buffer = glContext.createBuffer();
-                if (!buffer) {
-                    console.error("Failed to create WebGL buffer");
-                    glContext.isOptimizedRenderingEnabled = false;
-                    return;
-                }
-                
-                glContext.bindBuffer(glContext.ARRAY_BUFFER, buffer);
-                
-                // Positions and texture coordinates for full-screen quad
-                const vertices = new Float32Array([
-                    -1.0, -1.0, 0.0, 0.0,
-                    1.0, -1.0, 1.0, 0.0,
-                    1.0, 1.0, 1.0, 1.0,
-                    -1.0, 1.0, 0.0, 1.0
-                ]);
-                
-                glContext.bufferData(glContext.ARRAY_BUFFER, vertices, glContext.STATIC_DRAW);
-                glContext.isOptimizedRenderingEnabled = true;
-                console.log("WebGL optimization successful");
-            } catch (e) {
-                // Fallback if custom buffer creation fails
-                console.error("WebGL optimization failed:", e);
-                glContext.isOptimizedRenderingEnabled = false;
+            if (isR && (millis() - reST > reDu)) {
+                noRe();
             }
         }
 
@@ -1970,6 +1784,44 @@
                     tS.setUniform(name, value);
                 }
             }
+        }
+
+        function optimizeGLRendering() {
+            // Ensure WebGL context is valid
+            if (!glContext) return;
+            
+            // Optimize WebGL state for this specific renderer
+            
+            // Disable features we don't need (already done in setup, but ensure they stay disabled)
+            glContext.disable(glContext.DEPTH_TEST);
+            glContext.disable(glContext.CULL_FACE);
+            glContext.disable(glContext.DITHER);
+            glContext.disable(glContext.STENCIL_TEST);
+            
+            // Enable optimization features
+            glContext.enable(glContext.SCISSOR_TEST); // Enable scissor test for clipping
+            
+            // Set optimal blend mode for our rendering
+            glContext.enable(glContext.BLEND);
+            glContext.blendFunc(glContext.SRC_ALPHA, glContext.ONE_MINUS_SRC_ALPHA);
+            
+            // Set hints for WebGL renderer
+            glContext.hint(glContext.GENERATE_MIPMAP_HINT, glContext.FASTEST);
+            
+            // Optimize viewport to match canvas size exactly
+            glContext.viewport(0, 0, glContext.drawingBufferWidth, glContext.drawingBufferHeight);
+            
+            // Create a static vertex buffer for our quad rendering
+            createStaticVertexBuffer();
+        }
+        
+        // Create static vertex buffer for efficient rendering
+        function createStaticVertexBuffer() {
+            if (!glContext) return;
+            
+            // We'll set up a better vertex buffer in a real implementation
+            // For p5.js integration, we'll rely on p5's own buffer management
+            // But we can optimize how we use it
         }
     </script>
   </body>
