@@ -950,96 +950,11 @@
 
 
         function upTC() {
-            // Calculate visible area size
-            let viW, viH;
-            
-            if (ADAPTIVE_RESOLUTION.ENABLED) {
-                // When using adaptive resolution, calculate with display dimensions
-                const displayRatio = currentResolutionScale;
-                viW = (width / displayRatio) / scF;
-                viH = (height / displayRatio) / scF;
-            } else {
-                viW = width / scF;
-                viH = height / scF;
-            }
+            let viW = width / scF;
+            let viH = height / scF;
             
             tX = -width/2 + (viW * scF/2);
             tY = -height/2 + (viH * scF/2);
-        }
-        
-        // Function to detect system capabilities for better default settings
-        function detectDeviceCapabilities() {
-            // User agent detection for device type
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const isTablet = /iPad|tablet|Nexus 7|Nexus 10/i.test(navigator.userAgent);
-            
-            // GPU detection through WebGL
-            let gpuInfo = "unknown";
-            let isLowEndDevice = false;
-            
-            if (glContext) {
-                const debugInfo = glContext.getExtension('WEBGL_debug_renderer_info');
-                if (debugInfo) {
-                    const renderer = glContext.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                    gpuInfo = renderer;
-                    
-                    // Check for low-end GPUs or integrated graphics
-                    const lowerRenderer = renderer.toLowerCase();
-                    isLowEndDevice = lowerRenderer.includes('intel') || 
-                                     lowerRenderer.includes('hd graphics') ||
-                                     lowerRenderer.includes('mali') ||
-                                     lowerRenderer.includes('adreno') ||
-                                     isMobile;
-                }
-            }
-            
-            // Adjust resolution settings based on detected capabilities
-            if (ADAPTIVE_RESOLUTION.ENABLED) {
-                if (isLowEndDevice || isMobile) {
-                    // Lower quality for mobile and low-end devices
-                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.4;
-                    ADAPTIVE_RESOLUTION.MAX_SCALE = 0.8;
-                    ADAPTIVE_RESOLUTION.TARGET_FPS = 40;
-                    
-                    // Start with lower resolution
-                    if (currentResolutionScale > 0.6) {
-                        applyResolutionScale(0.6);
-                    }
-                } else if (isTablet) {
-                    // Medium quality for tablets
-                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.5;
-                    ADAPTIVE_RESOLUTION.MAX_SCALE = 0.9;
-                    ADAPTIVE_RESOLUTION.TARGET_FPS = 45;
-                    
-                    // Start with medium resolution
-                    if (currentResolutionScale > 0.75) {
-                        applyResolutionScale(0.75);
-                    }
-                } else {
-                    // Higher quality for desktops
-                    ADAPTIVE_RESOLUTION.MIN_SCALE = 0.6;
-                    ADAPTIVE_RESOLUTION.MAX_SCALE = 1.0;
-                    ADAPTIVE_RESOLUTION.TARGET_FPS = 50;
-                }
-            }
-            
-            // For pixel density-based quality approach, adjust based on device capabilities
-            if (!ADAPTIVE_RESOLUTION.ENABLED && isLowEndDevice) {
-                currentPixelDensity = 1.0;
-                pixelDensity(currentPixelDensity);
-            }
-            
-            // Log device information
-            console.log(`Device detected: ${isMobile ? 'Mobile' : isTablet ? 'Tablet' : 'Desktop'}`);
-            console.log(`GPU: ${gpuInfo}`);
-            console.log(`Performance mode: ${isLowEndDevice ? 'Low-end' : 'High-end'}`);
-            
-            return {
-                isMobile,
-                isTablet,
-                isLowEndDevice,
-                gpuInfo
-            };
         }
 
         function geT() {
@@ -1386,33 +1301,9 @@
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.hint(gl.GENERATE_MIPMAP_HINT, gl.FASTEST);
             
-            // Initialize adaptive resolution
-            currentResolutionScale = 1.0;
-            fpsHistory = [60, 60, 60, 60, 60]; // Initialize with optimistic values
-            lastResolutionCheck = performance.now();
-            lastResolutionChange = performance.now();
-            
-            // Fixed depth for shader (not adaptive)
-            const fixedMaxDepth = 5;
-            
-            // Detect device capabilities and adjust settings
-            const deviceInfo = detectDeviceCapabilities();
-            
-            // Adjust resolution settings based on device type
-            if (deviceInfo.isLowEndDevice) {
-                // Start with lower resolution on low-end devices
-                applyResolutionScale(0.7);
-            } else if (deviceInfo.isTablet) {
-                applyResolutionScale(0.85);
-            }
-            
-            // Initialize pixel density (fixed at 1.0 since we're using adaptive resolution)
-            currentPixelDensity = 1.0;
+            // Initialize pixel density
+            currentPixelDensity = 2;
             pixelDensity(currentPixelDensity);
-            
-            // Initialize the cell size based on the fixed number of cells vertically
-            // Regardless of resolution, we always want cV cells in the vertical dimension
-            cS = windowHeight / cV;
             
             // Pre-allocate recording chunk pool if WebM recording is supported
             if (typeof MediaRecorder !== 'undefined') {
@@ -1452,7 +1343,7 @@
             bS = bS || 1.0;
             
             // Initialize essential uniforms with defaults to avoid black screen
-            setShaderUniform('u_maxDepth', fixedMaxDepth); // Use fixed depth
+            setShaderUniform('u_maxDepth', 6);
             setShaderUniform('u_nS', nS);
             setShaderUniform('u_rSS', rSS);
             setShaderUniform('u_roA', radians(roA));
@@ -1472,12 +1363,29 @@
             setShaderUniform('u_sortAnimSpeed', soA);
             setShaderUniform('u_caScaleVariation', 0.5);
             
-            // Update canvas size with the current aspect ratio and resolution settings
-            upCS();
+            // These uniforms need to be set every frame, but initialize them here too
+            setShaderUniform('u_bS', bS);
+            setShaderUniform('u_scaleFactor', scF || 30);
+            setShaderUniform('u_translation', [tX || 0, tY || 0]);
+            setShaderUniform('u_resolution', [width, height]);
+            setShaderUniform('u_time', 0);
+            setShaderUniform('u_cellSize', (height / cV) * bS);
+            setShaderUniform('u_flowSpeed', fS);
+            setShaderUniform('u_currentPattern', cuP);
+            setShaderUniform('u_noiseScale', bN * (100.0 / floor(height / cV)));
+            
+            // Initialize feature toggle uniforms
+            setShaderUniform('u_enableDomainWarp', true);
+            setShaderUniform('u_enableLayeredNoise', true);
+            setShaderUniform('u_enableFlowFields', true);
+            setShaderUniform('u_enableGlyphNoise', true);
+            setShaderUniform('u_enableGridDistort', true);
+            setShaderUniform('u_enableGlyphNoiseDetail', true);
             
             if (inscription_id) {
                 // Original initialization for specific inscription
-                
+            upCS();
+            
                 // Setup event handlers with optimized implementation
                 suEH();
     
@@ -1620,6 +1528,7 @@
                 setShaderUniform('u_caScaleVariation', cASV);
             } else {
                 // Generic setup for no inscription
+                upCS();
                 suEH();
                 
                 // Set default scale and position
@@ -1637,82 +1546,10 @@
             stT = millis();  
         }
 
-        function upCS() {
-            const wiR = windowWidth / windowHeight;
-            let neW, neH;
-            
-            switch(dM) {
-                case 0: 
-                    neW = windowWidth;
-                    neH = windowHeight;
-                    break;
-                
-                case 1: 
-                    if (wiR > 1) {
-                        neH = windowHeight;
-                        neW = windowHeight;
-                    } else {
-                        neW = windowWidth;
-                        neH = windowWidth;
-                    }
-                    break;
-                
-                case 2: 
-                    if (wiR > 2/3) {
-                        neH = windowHeight;
-                        neW = (windowHeight * 2) / 3;
-                    } else {
-                        neW = windowWidth;
-                        neH = (windowWidth * 3) / 2;
-                    }
-                    break;
-            }
-            
-            if (ADAPTIVE_RESOLUTION.ENABLED) {
-                // Apply resolution scaling
-                neW = Math.floor(neW * currentResolutionScale);
-                neH = Math.floor(neH * currentResolutionScale);
-            }
-           
-            if (width !== neW || height !== neH) {
-                // Preserve current position relative to center 
-                const oldCenterX = tX + width/2;
-                const oldCenterY = tY + height/2;
-                
-                // Resize canvas
-                resizeCanvas(neW, neH);
-                
-                // Update position to maintain view center
-                tX = oldCenterX - neW/2;
-                tY = oldCenterY - neH/2;
-                
-                // Set CSS display size to maintain proper display
-                if (canvasElement) {
-                    if (ADAPTIVE_RESOLUTION.ENABLED) {
-                        // When using adaptive resolution, set display size to window dimensions
-                        const displayWidth = dM === 0 ? windowWidth : 
-                                            dM === 1 ? (wiR > 1 ? windowHeight : windowWidth) : 
-                                            (wiR > 2/3 ? (windowHeight * 2) / 3 : windowWidth);
-                                            
-                        const displayHeight = dM === 0 ? windowHeight : 
-                                             dM === 1 ? (wiR > 1 ? windowHeight : windowWidth) : 
-                                             (wiR > 2/3 ? windowHeight : (windowWidth * 3) / 2);
-                        
-                        canvasElement.style.width = `${displayWidth}px`;
-                        canvasElement.style.height = `${displayHeight}px`;
-                    }
-                    
-                    canvasElement.style.position = 'absolute';
-                    canvasElement.style.left = '50%';
-                    canvasElement.style.top = '50%';
-                    canvasElement.style.transform = 'translate(-50%,-50%)';
-                }
-            }
-        }
-
         function draw() {
             // Skip rendering when tab is not visible
             if (!isTabVisible) {
+                console.log("Tab not visible, skipping render");
                 return;
             }
             
@@ -1730,18 +1567,34 @@
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
+                console.log("FPS:", currentFPS.toFixed(1));
+            }
+            
+            // Performance monitoring and adaptation
+            if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
+                lastPerformanceCheck = now;
                 
-                // Log FPS occasionally to avoid console spam
-                if (frameCount % 60 === 0) {
-                    console.log("FPS:", currentFPS.toFixed(1), "Resolution:", Math.round(currentResolutionScale * 100) + "%");
+                // Only adjust if enough time has passed since last change
+                if (now - lastPixelDensityChange > MIN_DENSITY_CHANGE_INTERVAL) {
+                    let targetDensity;
+                    
+                    // Set quality based on performance
+                    if (currentFPS <= MIN_FPS_THRESHOLD) {
+                        targetDensity = 1.0;
+                    } else if (currentFPS <= MID_FPS_THRESHOLD) {
+                        targetDensity = 1.5;
+                    } else {
+                        targetDensity = 2.0;
+                    }
+                    
+                    // Only change if target is different from current
+                    if (targetDensity !== currentPixelDensity) {
+                        currentPixelDensity = targetDensity;
+                        pixelDensity(currentPixelDensity);
+                        lastPixelDensityChange = now;
+                        console.log('Adjusting pixel density to:', currentPixelDensity, 'FPS:', currentFPS.toFixed(1));
+                    }
                 }
-                
-                // Update performance tracking arrays
-                fpsHistory.push(currentFPS);
-                if (fpsHistory.length > 5) fpsHistory.shift();
-                
-                // Apply only adaptive resolution
-                updateAdaptiveResolution();
             }
             
             // Periodic memory cleanup
@@ -1807,28 +1660,6 @@
             }
             shader(tS);
             
-            // Use fixed max depth of 5
-            const fixedMaxDepth = 5;
-            
-            // Calculate cell size based on the fixed number of cells (cV)
-            // When using adaptive resolution, adjust cell size to maintain proportions
-            let displayHeight;
-            if (ADAPTIVE_RESOLUTION.ENABLED) {
-                // Calculate what the height would be at 100% resolution
-                const fullResHeight = height / currentResolutionScale;
-                // Use this for cell size calculation to maintain consistent cell count
-                displayHeight = fullResHeight;
-            } else {
-                displayHeight = height;
-            }
-            
-            // Update the cell size using the full resolution height to maintain proper scaling
-            cS = displayHeight / cV;
-            
-            // Calculate noise scale properly based on the fixed cell count
-            const cellSizePercent = displayHeight / cV;
-            const noiseScale = bN * (100.0 / floor(cellSizePercent));
-            
             // Batch update uniform values to minimize WebGL state changes
             // Use optimal shader uniform updates with caching to prevent redundant WebGL calls
             const uniforms = {
@@ -1837,7 +1668,7 @@
                 'u_translation': [tX, tY],
                 'u_resolution': [width, height],
                 'u_time': scT,
-                'u_cellSize': cS * bS, // Use properly calculated cell size
+                'u_cellSize': (height / cV) * bS,
                 'u_flowSpeed': fS,
                 'u_luminosity': lum,
                 'u_vibrancy': vib,
@@ -1845,10 +1676,18 @@
                 'u_sortFrequency': soF,
                 'u_sortAnimSpeed': soA,
                 'u_currentPattern': cuP,
-                'u_noiseScale': noiseScale,
-                'u_caScaleVariation': 0.5,
-                'u_maxDepth': fixedMaxDepth
+                'u_noiseScale': bN * (100.0 / floor(height / cV)),
+                'u_caScaleVariation': 0.5
             };
+            
+            // Log key uniforms for debugging
+            if (frameCount % 300 === 0) {
+                console.log("Key uniforms:", {
+                    resolution: uniforms['u_resolution'],
+                    time: uniforms['u_time'],
+                    cellSize: uniforms['u_cellSize']
+                });
+            }
             
             try {
                 // Update all uniforms at once to reduce shader binding state changes
@@ -1867,164 +1706,6 @@
             }
         }
         
-        function applyResolutionScale(scale) {
-            // Skip if no change or outside valid range
-            if (scale === currentResolutionScale || 
-                scale < ADAPTIVE_RESOLUTION.MIN_SCALE || 
-                scale > ADAPTIVE_RESOLUTION.MAX_SCALE) {
-                return;
-            }
-            
-            // Store current view center point in world coordinates
-            // This is the key to maintaining visual position during resolution changes
-            const viewCenterX = tX + (width / 2);
-            const viewCenterY = tY + (height / 2);
-            
-            // Store current transformation scaling
-            const oldScaleFactor = scF;
-            
-            // Store old dimensions for calculating scale ratio
-            const oldWidth = width;
-            const oldHeight = height;
-            
-            // Update resolution scale
-            currentResolutionScale = scale;
-            
-            // Calculate new canvas size based on window size and scale
-            const targetWidth = Math.floor(windowWidth * scale);
-            const targetHeight = Math.floor(windowHeight * scale);
-            
-            // Only resize if significant change
-            if (Math.abs(width - targetWidth) > 5 || Math.abs(height - targetHeight) > 5) {
-                // Apply new size to the rendering buffer
-                resizeCanvas(targetWidth, targetHeight);
-                
-                // Keep display size the same (CSS will handle scaling up)
-                if (canvasElement) {
-                    canvasElement.style.width = `${windowWidth}px`;
-                    canvasElement.style.height = `${windowHeight}px`;
-                    
-                    // Ensure proper CSS centering
-                    canvasElement.style.position = 'absolute';
-                    canvasElement.style.left = '50%';
-                    canvasElement.style.top = '50%';
-                    canvasElement.style.transform = 'translate(-50%, -50%)';
-                }
-                
-                console.log(`Adaptive resolution: ${Math.round(scale * 100)}% (${targetWidth}x${targetHeight})`);
-                
-                // Recalculate cell size to maintain the fixed number of cells vertically
-                // This ensures visual consistency regardless of resolution
-                cS = (windowHeight / cV);
-                
-                // Calculate new translation to maintain exact center point
-                tX = viewCenterX - (width / 2);
-                tY = viewCenterY - (height / 2);
-            }
-        }
-        
-        // Configure adaptive resolution system with stability settings
-        const ADAPTIVE_RESOLUTION = {
-            ENABLED: true,                  // Enable adaptive resolution
-            MIN_SCALE: 0.4,                 // Minimum resolution scale (40% of full resolution)
-            MAX_SCALE: 1.0,                 // Maximum resolution scale (100% of full resolution) 
-            TARGET_FPS: 45,                 // Target FPS to maintain
-            ADJUSTMENT_RATE: 0.1,           // How quickly to adjust resolution (higher = faster changes)
-            CHECK_INTERVAL: 2000,           // How often to check performance (milliseconds)
-            STABILITY_THRESHOLD: 8,         // FPS difference threshold for considering stable
-            UPSCALE_DELAY: 5000,            // Wait time before attempting to increase resolution
-            CHANGE_THRESHOLD: 0.05,         // Minimum FPS difference to trigger change (% of target)
-            STABILITY_PERIOD: 20000,        // Once stable, lock resolution for this period (ms)
-            MAX_CHANGES_PER_MINUTE: 4       // Limit total changes per minute to prevent oscillation
-        };
-        
-        // Add variables to track resolution stability
-        let resolutionStableUntil = 0;
-        let lastResolutionChanges = [];
-        
-        // Update adaptive resolution to make smoother transitions
-        function updateAdaptiveResolution() {
-            // Skip if disabled
-            if (!ADAPTIVE_RESOLUTION.ENABLED) return;
-            
-            const now = performance.now();
-            
-            // Only check periodically
-            if (now - lastResolutionCheck < ADAPTIVE_RESOLUTION.CHECK_INTERVAL) return;
-            lastResolutionCheck = now;
-            
-            // Check if we're in a stability period and should skip changes
-            if (now < resolutionStableUntil) {
-                return;
-            }
-            
-            // Clean up old change timestamps
-            const oneMinuteAgo = now - 60000;
-            lastResolutionChanges = lastResolutionChanges.filter(time => time > oneMinuteAgo);
-            
-            // Check if we've made too many changes in the last minute
-            if (lastResolutionChanges.length >= ADAPTIVE_RESOLUTION.MAX_CHANGES_PER_MINUTE) {
-                console.log("Too many resolution changes recently, waiting to stabilize");
-                return;
-            }
-            
-            // Track FPS for stability detection
-            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
-            const fpsVariance = Math.max(...fpsHistory) - Math.min(...fpsHistory);
-            isPerformanceStable = fpsVariance < ADAPTIVE_RESOLUTION.STABILITY_THRESHOLD;
-            
-            // Calculate FPS difference from target (as percentage)
-            const fpsDiffPercent = Math.abs(avgFps - ADAPTIVE_RESOLUTION.TARGET_FPS) / ADAPTIVE_RESOLUTION.TARGET_FPS;
-            
-            // Only change if difference is significant
-            if (fpsDiffPercent < ADAPTIVE_RESOLUTION.CHANGE_THRESHOLD && isPerformanceStable) {
-                // If we're within threshold of target and stable, lock in this resolution
-                if (resolutionStableUntil === 0) {
-                    console.log(`Resolution ${Math.round(currentResolutionScale * 100)}% locked for stability period`);
-                    resolutionStableUntil = now + ADAPTIVE_RESOLUTION.STABILITY_PERIOD;
-                }
-                return;
-            }
-            
-            let newScale = currentResolutionScale;
-            
-            // If FPS is too low, decrease resolution more aggressively
-            if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 15) {
-                // Large drop for very poor performance
-                newScale = Math.max(
-                    ADAPTIVE_RESOLUTION.MIN_SCALE,
-                    currentResolutionScale - ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE
-                );
-            } 
-            // If FPS is slightly low, make smaller adjustments
-            else if (avgFps < ADAPTIVE_RESOLUTION.TARGET_FPS - 5) {
-                newScale = Math.max(
-                    ADAPTIVE_RESOLUTION.MIN_SCALE,
-                    currentResolutionScale - (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 2)
-                );
-            }
-            // If FPS is good and we haven't changed recently, try increasing resolution
-            else if (avgFps > ADAPTIVE_RESOLUTION.TARGET_FPS + 15 && 
-                      now - lastResolutionChange > ADAPTIVE_RESOLUTION.UPSCALE_DELAY &&
-                      isPerformanceStable) {
-                // Only increase resolution when performance is very good and stable
-                newScale = Math.min(
-                    ADAPTIVE_RESOLUTION.MAX_SCALE,
-                    currentResolutionScale + (ADAPTIVE_RESOLUTION.ADJUSTMENT_RATE / 4) // Very slow upscaling
-                );
-            }
-            
-            // Apply the change if it's different enough to matter
-            if (Math.abs(newScale - currentResolutionScale) > 0.03) {
-                applyResolutionScale(newScale);
-                lastResolutionChange = now;
-                lastResolutionChanges.push(now);
-                
-                // Reset stability period when we make a change
-                resolutionStableUntil = 0;
-            }
-        }
-
         // Efficient batch update of shader uniforms
         function updateShaderUniforms(uniformsObj) {
             // Ensure shader is bound only once
@@ -2037,6 +1718,35 @@
             }
         }
         
+        // Optimized function to render a fullscreen quad with minimal state changes
+        function renderFullscreenQuad() {
+            if (!glContext) {
+                console.error("No GL context for rendering fullscreen quad");
+                return;
+            }
+            
+            try {
+                // Use WebGL directly for more efficient rendering when possible
+                if (glContext.isOptimizedRenderingEnabled && false) { // Temporarily disable direct path
+                    console.log("Using optimized rendering path");
+                    // Direct WebGL rendering path (when available)
+                    glContext.drawArrays(glContext.TRIANGLE_FAN, 0, 4);
+                } else {
+                    // Fallback to p5's rendering path with minimal vertex data
+            beginShape();
+            vertex(0, 0, 0, 0, 0);
+            vertex(2, 0, 0, 1, 0);
+            vertex(2, 2, 0, 1, 1);
+            vertex(0, 2, 0, 0, 1);
+            endShape(CLOSE);
+                }
+            } catch (e) {
+                console.error("Error in renderFullscreenQuad:", e);
+                // Ultimate fallback
+                rect(0, 0, width, height);
+            }
+        }
+
         // Modified optimizeGLRendering to enable faster draw paths
         function optimizeGLRendering() {
             // Ensure WebGL context is valid
@@ -2068,46 +1778,6 @@
                 // Set rendering hints
                 glContext.hint(glContext.GENERATE_MIPMAP_HINT, glContext.FASTEST);
                 
-                // Create complete shader program for direct rendering
-                try {
-                    // Get the shader source code
-                    const vertSrc = document.getElementById('vertex-shader').textContent;
-                    const fragSrc = document.getElementById('fragment-shader').textContent;
-                    
-                    // Create program
-                    const directProgram = glContext.createProgram();
-                    
-                    // Create and compile vertex shader
-                    const vertShader = glContext.createShader(glContext.VERTEX_SHADER);
-                    glContext.shaderSource(vertShader, vertSrc);
-                    glContext.compileShader(vertShader);
-                    
-                    // Create and compile fragment shader
-                    const fragShader = glContext.createShader(glContext.FRAGMENT_SHADER);
-                    glContext.shaderSource(fragShader, fragSrc);
-                    glContext.compileShader(fragShader);
-                    
-                    // Attach shaders to program and link
-                    glContext.attachShader(directProgram, vertShader);
-                    glContext.attachShader(directProgram, fragShader);
-                    glContext.linkProgram(directProgram);
-                    
-                    // Check for errors
-                    if (!glContext.getProgramParameter(directProgram, glContext.LINK_STATUS)) {
-                        throw new Error("Direct rendering program failed to link: " + 
-                                        glContext.getProgramInfoLog(directProgram));
-                    }
-                    
-                    // Store program for direct rendering
-                    glContext.directProgram = directProgram;
-                    
-                    // Get attribute locations
-                    glContext.posAttribLoc = glContext.getAttribLocation(directProgram, "aPosition");
-                    glContext.texAttribLoc = glContext.getAttribLocation(directProgram, "aTexCoord");
-                } catch (e) {
-                    console.error("Failed to create direct rendering program:", e);
-                }
-                
                 // Create vertex buffer for more efficient quad rendering
                 const buffer = glContext.createBuffer();
                 if (!buffer) {
@@ -2118,68 +1788,21 @@
                 
                 glContext.bindBuffer(glContext.ARRAY_BUFFER, buffer);
                 
-                // Create better structured quad with positions and texcoords interleaved
-                // Format: x, y, z, s, t (position and texcoord)
+                // Positions and texture coordinates for full-screen quad
                 const vertices = new Float32Array([
-                    -1.0, -1.0, 0.0, 0.0, 0.0,
-                    1.0, -1.0, 0.0, 1.0, 0.0,
-                    1.0, 1.0, 0.0, 1.0, 1.0,
-                    -1.0, 1.0, 0.0, 0.0, 1.0
+                    -1.0, -1.0, 0.0, 0.0,
+                    1.0, -1.0, 1.0, 0.0,
+                    1.0, 1.0, 1.0, 1.0,
+                    -1.0, 1.0, 0.0, 1.0
                 ]);
                 
                 glContext.bufferData(glContext.ARRAY_BUFFER, vertices, glContext.STATIC_DRAW);
-                
-                // Store the vertices buffer for later use
-                glContext.quadBuffer = buffer;
                 glContext.isOptimizedRenderingEnabled = true;
-                console.log("WebGL optimization successful - direct rendering enabled");
+                console.log("WebGL optimization successful");
             } catch (e) {
                 // Fallback if custom buffer creation fails
                 console.error("WebGL optimization failed:", e);
                 glContext.isOptimizedRenderingEnabled = false;
-            }
-        }
-
-        // Add debug helper function for direct WebGL path
-        function debugRenderingInfo(message, level = 'info') {
-            // Only log in development mode or when forced
-            const isDebugEnabled = false; // Change to true for debugging
-            if (isDebugEnabled) {
-                switch(level) {
-                    case 'error': console.error('[WebGL Direct]', message); break;
-                    case 'warn': console.warn('[WebGL Direct]', message); break;
-                    default: console.log('[WebGL Direct]', message);
-                }
-            }
-        }
-        
-        // Optimized function to render a fullscreen quad with minimal state changes
-        function renderFullscreenQuad() {
-            if (!glContext) {
-                console.error("No GL context for rendering fullscreen quad");
-                return;
-            }
-            
-            try {
-                // Temporarily disable direct WebGL rendering path - use p5's path instead
-                if (false && glContext.isOptimizedRenderingEnabled && glContext.directProgram) {
-                    // Direct WebGL rendering path code left in place but disabled
-                    // ...
-                } else {
-                    debugRenderingInfo("Using p5 fallback path", 'info');
-                }
-                
-                // Always use p5's rendering path for now
-            beginShape();
-            vertex(0, 0, 0, 0, 0);
-            vertex(2, 0, 0, 1, 0);
-            vertex(2, 2, 0, 1, 1);
-            vertex(0, 2, 0, 0, 1);
-            endShape(CLOSE);
-            } catch (e) {
-                console.error("Error in renderFullscreenQuad:", e);
-                // Ultimate fallback
-                rect(0, 0, width, height);
             }
         }
 
@@ -2347,83 +1970,6 @@
                     tS.setUniform(name, value);
                 }
             }
-        }
-
-        // Add these variables to track adaptive resolution state
-        let currentResolutionScale = 1.0;
-        let lastResolutionCheck = 0;
-        let lastResolutionChange = 0;
-        let fpsHistory = [];
-        let isPerformanceStable = false;
-        
-        function updateAdaptiveComplexity() {
-            // Skip if disabled
-            if (!ADAPTIVE_COMPLEXITY.ENABLED) return;
-            
-            const now = performance.now();
-            
-            // Only check periodically
-            if (now - lastDepthCheck < ADAPTIVE_COMPLEXITY.CHECK_INTERVAL) return;
-            lastDepthCheck = now;
-            
-            // Only adjust if enough time has passed since last change
-            if (now - lastDepthChange < ADAPTIVE_COMPLEXITY.CHANGE_DELAY) return;
-            
-            // Use the same FPS data we're already collecting
-            const avgFps = fpsHistory.reduce((sum, fps) => sum + fps, 0) / fpsHistory.length;
-            
-            // Determine if we need to adjust depth
-            let newDepth = currentDepth;
-            
-            // If FPS is too low, decrease depth
-            if (avgFps < ADAPTIVE_COMPLEXITY.TARGET_FPS) {
-                // Find the highest quality level that's lower than current
-                for (let i = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS.length - 1; i >= 0; i--) {
-                    if (ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i] < currentDepth) {
-                        newDepth = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i];
-                        break;
-                    }
-                }
-                // Ensure we don't go below minimum
-                newDepth = Math.max(ADAPTIVE_COMPLEXITY.MIN_DEPTH, newDepth);
-            } 
-            // If FPS is high, try increasing depth
-            else if (avgFps > ADAPTIVE_COMPLEXITY.UPSCALE_THRESHOLD) {
-                // Find the lowest quality level that's higher than current
-                for (let i = 0; i < ADAPTIVE_COMPLEXITY.QUALITY_LEVELS.length; i++) {
-                    if (ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i] > currentDepth) {
-                        newDepth = ADAPTIVE_COMPLEXITY.QUALITY_LEVELS[i];
-                        break;
-                    }
-                }
-                // Ensure we don't exceed maximum
-                newDepth = Math.min(ADAPTIVE_COMPLEXITY.MAX_DEPTH, newDepth);
-            }
-            
-            // Apply the change if it's different
-            if (newDepth !== currentDepth) {
-                applyDepthChange(newDepth);
-                lastDepthChange = now;
-            }
-        }
-        
-        function applyDepthChange(depth) {
-            if (depth === currentDepth) return;
-            
-            currentDepth = depth;
-            setShaderUniform('u_maxDepth', depth);
-            
-            // You can also adjust other complexity parameters here if needed
-            // For example, reducing noise detail, disabling effects, etc.
-            
-            // Optionally disable certain effects at very low depths
-            if (depth <= ADAPTIVE_COMPLEXITY.MIN_DEPTH) {
-                setShaderUniform('u_enableGlyphNoiseDetail', false);
-            } else {
-                setShaderUniform('u_enableGlyphNoiseDetail', true);
-            }
-            
-            console.log(`Adaptive complexity: Depth set to ${depth}`);
         }
     </script>
   </body>
