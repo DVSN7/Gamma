@@ -1028,11 +1028,13 @@
                 if (keyState.has(e.key)) return;
                 keyState.add(e.key);
                 
-                console.log('Key pressed:', e.key); // Debug logging
+                // Debug logging removed to keep console cleaner
                 
                 switch(e.key.toLowerCase()) {
                     case 'a':
-                        dM = (dM + 1) % 4; // Changed from 3 to 4 modes
+                        dM = (dM + 1) % 4;
+                        const aspectModes = ["3:4 Portrait", "1:1 Square", "4:3 Landscape", "Fullscreen"];
+                        console.log(`Aspect ratio: ${aspectModes[dM]}`);
                         requestAnimationFrame(upCS);
                         break;
                         
@@ -1041,10 +1043,12 @@
                         tX = -width/2;
                         tY = -height/2;
                         scF = 30;
+                        console.log("View reset to center");
                         break;
                         
                     case 's':
                         isP = !isP;
+                        console.log(`Animation: ${isP ? 'PLAYING' : 'PAUSED'}`);
                         if (isP) {
                             stT = millis() * 0.1;
                             // Ensure draw loop restarts if we're enabling playback
@@ -1061,12 +1065,14 @@
                             const cuD = pixelDensity();
                             const nwD = e.key === '1' ? 4 : (e.key === '2' ? 5 : 5.5);
                             
+                            console.log(`Saving screenshot with pixel density ${nwD}...`);
                             pixelDensity(nwD);
                             draw();
                            
                             const tiS = geT();
                             const prefix = e.key === '1' ? 'shader_' : 'shader_hires_';
                             saveCanvas(prefix + tiS, 'png');
+                            console.log(`Screenshot saved as ${prefix}${tiS}.png`);
                             
                             pixelDensity(cuD);
                             draw();
@@ -1076,8 +1082,10 @@
                     case 'd':
                         if (scF === 30) {
                             scF = 10;
+                            console.log("Zoom level: ZOOMED OUT");
                         } else {
                             scF = 30;
+                            console.log("Zoom level: ZOOMED IN");
                         }
                         // No need to call upTC here as we want to maintain position
                         break;
@@ -1085,27 +1093,65 @@
                     case 'k':
                         if (!isR) {
                             stRe();
+                            console.log("Recording started");
                         } else {
                             noRe();
+                            console.log("Recording stopped");
                         }
                         break;
                         
                     // Resolution scaling controls
                     case 'q':
                         adaptiveScaling = !adaptiveScaling;
-                        console.log(`Adaptive resolution scaling: ${adaptiveScaling ? 'ON' : 'OFF'}`);
+                        console.log(`Adaptive scaling: ${adaptiveScaling ? 'ON - will adjust automatically based on performance' : 'OFF - using manual settings'}`);
                         break;
                         
-                    case '[':
-                        renderScale = Math.max(minRenderScale, renderScale - 0.1);
-                        console.log(`Manual render scale: ${renderScale.toFixed(2)}`);
-                        setupOffscreenBuffer();
+                    case '8': // Changed from '[' to '8'
+                        if (window.multiBufError) {
+                            // If buffer isn't supported, adjust shader complexity instead
+                            const oldComplexity = Math.round(shaderComplexity * 100);
+                            shaderComplexity = Math.max(0.25, shaderComplexity - 0.1);
+                            const newComplexity = Math.round(shaderComplexity * 100);
+                            console.log(`Manual shader complexity: ${oldComplexity}% → ${newComplexity}% | Iterations: ${Math.max(2, Math.floor(6 * shaderComplexity))}`);
+                            adjustShaderComplexity(currentFPS);
+                        } else {
+                            const oldScale = renderScale.toFixed(2);
+                            renderScale = Math.max(minRenderScale, renderScale - 0.1);
+                            console.log(`Manual render scale: ${oldScale} → ${renderScale.toFixed(2)} | Resolution: ${Math.round(width * renderScale)}x${Math.round(height * renderScale)}`);
+                            setupOffscreenBuffer();
+                        }
                         break;
                         
-                    case ']':
-                        renderScale = Math.min(maxRenderScale, renderScale + 0.1);
-                        console.log(`Manual render scale: ${renderScale.toFixed(2)}`);
-                        setupOffscreenBuffer();
+                    case '9': // Changed from ']' to '9'
+                        if (window.multiBufError) {
+                            // If buffer isn't supported, adjust shader complexity instead
+                            const oldComplexity = Math.round(shaderComplexity * 100);
+                            shaderComplexity = Math.min(1.0, shaderComplexity + 0.1);
+                            const newComplexity = Math.round(shaderComplexity * 100);
+                            console.log(`Manual shader complexity: ${oldComplexity}% → ${newComplexity}% | Iterations: ${Math.max(2, Math.floor(6 * shaderComplexity))}`);
+                            adjustShaderComplexity(currentFPS);
+                        } else {
+                            const oldScale = renderScale.toFixed(2);
+                            renderScale = Math.min(maxRenderScale, renderScale + 0.1);
+                            console.log(`Manual render scale: ${oldScale} → ${renderScale.toFixed(2)} | Resolution: ${Math.round(width * renderScale)}x${Math.round(height * renderScale)}`);
+                            setupOffscreenBuffer();
+                        }
+                        break;
+                        
+                    // Additional shortcuts for shader complexity features
+                    case 'o':
+                        // Toggle specific shader features
+                        enableDetails = !enableDetails;
+                        setShaderUniform('u_enableGlyphNoiseDetail', enableDetails);
+                        console.log(`Detail features: ${enableDetails ? 'ON - higher quality, lower performance' : 'OFF - better performance'}`);
+                        break;
+                        
+                    case 'p':
+                        // Toggle domain warping - using a safer approach
+                        // Track state in our own variable to avoid direct uniform access
+                        window.domainWarpEnabled = !(window.domainWarpEnabled === true);
+                        setShaderUniform('u_enableDomainWarp', window.domainWarpEnabled);
+                        console.log(`Domain warping: ${window.domainWarpEnabled ? 'ON - higher quality, lower performance' : 'OFF - better performance'}`);
                         break;
                 }
             }
@@ -1369,6 +1415,30 @@
             renderScale = 1.0;
             adaptiveScaling = true;
             
+            // Initialize shader complexity settings
+            shaderComplexity = 1.0;
+            maxLoopIterations = 6;
+            noiseOctaves = 6;
+            enableDetails = true;
+            window.domainWarpEnabled = true;
+            
+            // Test if offscreen buffers are supported
+            try {
+                const testBuffer = createGraphics(100, 100, WEBGL);
+                if (!testBuffer || !testBuffer.GL) {
+                    console.log("Multiple WebGL contexts not supported on this device.");
+                    console.log("Falling back to shader complexity optimization.");
+                    window.multiBufError = true;
+                } else {
+                    testBuffer.remove();
+                    console.log("Offscreen buffer support detected.");
+                }
+            } catch (e) {
+                console.log("Error testing WebGL support:", e);
+                console.log("Falling back to shader complexity optimization.");
+                window.multiBufError = true;
+            }
+            
             if (!inscription_id) {
                 return;
             }
@@ -1426,7 +1496,7 @@
                     let h;
                     if (brightnessType === 'mid' && baseHue !== null) {
                         h = (baseHue + 0.5) % 1.0;
-                    } else {
+} else {
                         h = R.D();  
                     }
 
@@ -1522,14 +1592,21 @@
 
             scF = 30;
             upTC();
-            
+
             stT = millis();  
             
             let cASV = R.N(1.5, 3.0);  
             setShaderUniform('u_caScaleVariation', cASV);
             
-            // Add keyboard control for resolution scaling
-            console.log("Render scaling initialized. Press 'Q' to toggle adaptive scaling, '[' to decrease scale, ']' to increase scale");
+            // Add shader complexity control to keyboard instructions
+            if (window.multiBufError) {
+                console.log("Performance optimization: using shader complexity control");
+                console.log("Press 'Q' to toggle adaptive complexity, '8' to decrease complexity, '9' to increase complexity");
+                console.log("Press 'O' to toggle detail features, 'P' to toggle domain warping");
+            } else {
+                console.log("Performance optimization: using resolution scaling");
+                console.log("Press 'Q' to toggle adaptive scaling, '8' to decrease scale, '9' to increase scale");
+            }
             
             // Start the animation loop
             requestAnimationFrame(draw);
@@ -1573,6 +1650,8 @@
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
                 
+                // Remove periodic status messages - only log when values change
+                
                 // Update adaptive resolution based on performance
                 updateAdaptiveResolution(currentFPS);
             }
@@ -1590,7 +1669,7 @@
                         targetDensity = 1.0;
                     } else if (currentFPS <= MID_FPS_THRESHOLD) {
                         targetDensity = 1.5;
-            } else {
+                    } else {
                         targetDensity = 2.0;
                     }
                     
@@ -1660,14 +1739,7 @@
                 vertex(-1, 1, 0, 0, 1);
                 endShape(CLOSE);
                 
-                // Display adaptive scaling message if needed
-                if (renderScale < 1.0) {
-                    fill(255);
-                    noStroke();
-                    textSize(12);
-                    textAlign(LEFT, BOTTOM);
-                    text(`Unable to use scaled rendering - using full resolution`, 10, height - 10);
-                }
+                // Removed all text rendering code
             } else {
                 // Get the buffer from setupOffscreenBuffer
                 const buffer = offscreenBuffer;
@@ -1775,14 +1847,7 @@
                     vertex(-1, 1, 0, 0, 1);
                     endShape(CLOSE);
                     
-                    // Display current resolution scale and FPS
-                    if (renderScale < 1.0) {
-                        fill(255);
-                        noStroke();
-                        textSize(12);
-                        textAlign(LEFT, BOTTOM);
-                        text(`Scale: ${renderScale.toFixed(2)} | FPS: ${currentFPS.toFixed(1)}`, 10, height - 10);
-                    }
+                    // Removed all text rendering code
                 } catch (err) {
                     console.error("Error setting shader uniforms:", err);
                     // Fall back to direct rendering on error
@@ -2044,8 +2109,21 @@
 
         // Create or resize the offscreen buffer based on current canvas size and render scale
         function setupOffscreenBuffer() {
+            // Skip if already at full resolution
             if (renderScale >= 0.99) {
-                // Skip buffer setup if we're at full resolution
+                return false;
+            }
+            
+            // Check if WebGL contexts are supported via feature detection
+            const hasWebGLMultiContext = 
+                typeof WebGLRenderingContext !== 'undefined' && 
+                typeof WebGL2RenderingContext !== 'undefined' && 
+                !window.multiBufError;
+            
+            if (!hasWebGLMultiContext) {
+                // If previous attempts failed, avoid retrying
+                console.log("Multiple WebGL contexts not supported on this device");
+                renderScale = 1.0;
                 return false;
             }
             
@@ -2080,6 +2158,7 @@
                         if (!offscreenBuffer || !offscreenBuffer.GL) {
                             console.error("Failed to create offscreen buffer with WebGL context");
                             offscreenBuffer = null;
+                            window.multiBufError = true; // Mark that multi-context failed for future calls
                             return false;
                         }
                         
@@ -2102,6 +2181,7 @@
                         if (!bufferShader) {
                             console.error("Created buffer shader is null");
                             offscreenBuffer = null;
+                            window.multiBufError = true;
                             return false;
                         }
                         
@@ -2114,6 +2194,7 @@
                         console.error("Error creating buffer or shader:", createError);
                         offscreenBuffer = null;
                         bufferShader = null;
+                        window.multiBufError = true;
                         return false;
                     }
                 }
@@ -2123,11 +2204,18 @@
                 console.error("Unexpected error in setupOffscreenBuffer:", error);
                 offscreenBuffer = null;
                 bufferShader = null;
+                window.multiBufError = true;
                 return false;
             }
         }
 
-        // Adjust render scale based on current FPS performance
+        // Add these variables for shader complexity adjustments
+        let shaderComplexity = 1.0;   // Scale from 0.25 (lowest) to 1.0 (highest) for shader complexity
+        let maxLoopIterations = 6;    // Default maximum loop iterations in the shader
+        let noiseOctaves = 6;         // Number of noise octaves to use
+        let enableDetails = true;     // Enable/disable detail features
+
+        // Modify updateAdaptiveResolution to use shader complexity if offscreen buffers aren't supported
         function updateAdaptiveResolution(currentFPS) {
             // Only adjust resolution periodically
             const now = performance.now();
@@ -2140,38 +2228,89 @@
                 return;
             }
             
-            let newScale = renderScale;
+            // Check if multi-context is available
+            const canUseMultiContext = !window.multiBufError;
             
-            // If FPS is too low, reduce resolution to improve performance
+            if (canUseMultiContext) {
+                // Standard resolution scaling approach
+                let newScale = renderScale;
+                
+                // If FPS is too low, reduce resolution to improve performance
+                if (currentFPS < lowFPSThreshold) {
+                    newScale = Math.max(minRenderScale, renderScale - scaleAdjustRate);
+                } 
+                // If FPS is high enough, increase resolution for better quality
+                else if (currentFPS > highFPSThreshold && renderScale < maxRenderScale) {
+                    newScale = Math.min(maxRenderScale, renderScale + scaleAdjustRate);
+                }
+                
+                // Only update if scale actually changed
+                if (newScale !== renderScale) {
+                    console.log(`Adjusting render scale: ${renderScale.toFixed(2)} -> ${newScale.toFixed(2)} (FPS: ${currentFPS.toFixed(1)})`);
+                    renderScale = newScale;
+                    lastScaleChange = now;
+                    
+                    // If previous buffer creation failed, try a much lower scale
+                    if (offscreenBuffer === null && newScale < 0.8) {
+                        renderScale = 0.5;
+                        console.log("Previous buffer creation failed, jumping to 50% scale");
+                    }
+                    
+                    // Try setting up the buffer with new scale
+                    const bufferSuccess = setupOffscreenBuffer();
+                    
+                    // If buffer setup failed, revert to shader complexity approach
+                    if (!bufferSuccess && renderScale < 1.0) {
+                        console.log("Failed to create offscreen buffer, switching to shader complexity optimization");
+                        renderScale = 1.0;
+                        window.multiBufError = true;
+                        adjustShaderComplexity(currentFPS);
+                    }
+                }
+            } else {
+                // Use shader complexity optimization instead
+                adjustShaderComplexity(currentFPS);
+            }
+        }
+
+        // New function to adjust shader complexity based on FPS
+        function adjustShaderComplexity(currentFPS) {
+            let newComplexity = shaderComplexity;
+            
+            // If FPS is too low, reduce shader complexity
             if (currentFPS < lowFPSThreshold) {
-                newScale = Math.max(minRenderScale, renderScale - scaleAdjustRate);
+                newComplexity = Math.max(0.25, shaderComplexity - 0.1);
             } 
-            // If FPS is high enough, increase resolution for better quality
-            else if (currentFPS > highFPSThreshold && renderScale < maxRenderScale) {
-                newScale = Math.min(maxRenderScale, renderScale + scaleAdjustRate);
+            // If FPS is high, increase shader complexity
+            else if (currentFPS > highFPSThreshold && shaderComplexity < 1.0) {
+                newComplexity = Math.min(1.0, shaderComplexity + 0.05);
             }
             
-            // Only update if scale actually changed
-            if (newScale !== renderScale) {
-                console.log(`Adjusting render scale: ${renderScale.toFixed(2)} -> ${newScale.toFixed(2)} (FPS: ${currentFPS.toFixed(1)})`);
-                renderScale = newScale;
-                lastScaleChange = now;
+            // Only update if complexity changed
+            if (newComplexity !== shaderComplexity) {
+                shaderComplexity = newComplexity;
+                const complexityPercent = Math.round(shaderComplexity * 100);
+                console.log(`Adjusting shader complexity: ${complexityPercent}% | FPS: ${currentFPS.toFixed(1)} | Iterations: ${Math.max(2, Math.floor(6 * shaderComplexity))}`);
                 
-                // If previous attempts to create a buffer failed and we're decreasing scale further,
-                // just jump to a much lower scale to avoid many small decreases that all fail
-                if (offscreenBuffer === null && newScale < 0.8) {
-                    renderScale = 0.5; // Jump to 50% to avoid multiple small adjustments
-                    console.log("Previous buffer creation failed, jumping to 50% scale");
+                // Apply complexity to shader parameters
+                maxLoopIterations = Math.max(2, Math.floor(6 * shaderComplexity));
+                noiseOctaves = Math.max(2, Math.floor(6 * shaderComplexity));
+                enableDetails = shaderComplexity > 0.5;
+                
+                // Update shader uniforms immediately
+                if (tS) {
+                    setShaderUniform('u_maxDepth', maxLoopIterations);
+                    setShaderUniform('u_enableGlyphNoiseDetail', enableDetails);
+                    
+                    // Add toggles for additional features based on complexity
+                    setShaderUniform('u_enableDomainWarp', shaderComplexity > 0.3);
+                    setShaderUniform('u_enableLayeredNoise', shaderComplexity > 0.4);
+                    setShaderUniform('u_enableFlowFields', shaderComplexity > 0.6);
+                    setShaderUniform('u_enableGlyphNoise', shaderComplexity > 0.2);
+                    setShaderUniform('u_enableGridDistort', shaderComplexity > 0.5);
                 }
                 
-                // Try setting up the buffer with new scale - returns true if successful
-                const bufferSuccess = setupOffscreenBuffer();
-                
-                // If buffer setup failed, revert to full resolution
-                if (!bufferSuccess && renderScale < 1.0) {
-                    console.log("Failed to create offscreen buffer, reverting to full resolution");
-                    renderScale = 1.0;
-                }
+                lastScaleChange = performance.now();
             }
         }
     </script>
