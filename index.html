@@ -234,48 +234,50 @@
         }
 
         float fbmSimplexNoise(vec2 v, int octaves) {
+            // Bail early for 0 octaves
             if (octaves <= 0) return 0.0;
             
+            // PERFORMANCE OPTIMIZATION: Hard-coded parameters with minimal math
+            // and reduced multiplications
             const float PERSISTENCE = 0.001;
             const float LACUNARITY = 0.0009;
-            const int MAX_OCTAVES = 2;
+            
+            // Apply initial offsets once
+            v += u_nOS + vec2(u_nS);
+            
+            // For extreme performance optimization, skip multi-octave calculation
+            // when we only need a rough estimate (like in distort calculations)
+            if (octaves <= 2) {
+                // Ultra simplified single-octave version for distortion calculations
+                return simplexNoise(v, u_time * 0.05) * u_amplitude * u_baseModulation;
+            }
             
             float total = 0.0;
             float amplitude = u_amplitude;
             float frequency = u_initialFreq;
             
-            // Apply initial offsets
-            v += u_nOS + vec2(u_nS);
+            // First octave - most prominent
+            total = amplitude * simplexNoise(v, u_time);
             
-            // Domain warping disabled - use direct layered noise
-            // This is a significant performance improvement
-            float basePattern = layeredNoise(v, u_time);
-            total = amplitude * basePattern;
-            
-            // Simplified time influence - single noise sample
-            float timeInfluence = simplexNoise(vec2(u_time * 0.05, 0.0), u_nS) * 0.5;
-            
-            // Only two octaves with simplified rotation
-            float timeRotation = u_time * 0.05;
-            // Precalculate sin/cos using fast approximations
-            float sinRot = fastSin(timeRotation);
-            float cosRot = fastCos(timeRotation);
-            mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
-            
-            // First octave - optimize by using direct coordinate without warping
-            amplitude *= PERSISTENCE * 3.2;
-            frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-            total += amplitude * layeredNoise(rot * v * frequency, u_time * 0.9);
-            
-            // Second octave (if needed) - also optimize
+            // Only add a second octave if needed
             if (octaves > 1) {
-                amplitude *= PERSISTENCE * 2.0;
-                frequency *= LACUNARITY * (1.0 + timeInfluence * 0.2);
-                total += amplitude * layeredNoise(rot * v * frequency, u_time * 0.9);
+                // Simplified time influence calculation
+                float timeInfluence = sin(u_time * 0.05) * 0.2 + 0.5;
+                
+                // Simplified rotation using precomputed values
+                float timeRotation = u_time * 0.05;
+                float sinRot = sin(timeRotation);
+                float cosRot = cos(timeRotation);
+                mat2 rot = mat2(cosRot, -sinRot, sinRot, cosRot);
+                
+                // Second octave
+                amplitude *= PERSISTENCE * 3.0;
+                frequency *= LACUNARITY;
+                total += amplitude * simplexNoise(rot * v * frequency, u_time * 0.8);
             }
             
-            // Apply final modulation
-            return total * (timeInfluence * 0.9 + u_baseModulation);
+            // Apply final modulation with fewer calculations
+            return total * u_baseModulation;
         }
 
         lowp vec3 getColorFromPalette(float t) {
@@ -430,90 +432,89 @@
 
         // Then modify getGlyphPattern to use these settings
         lowp float getGlyphPattern(vec2 cell, float depth, float seed, vec2 normalizedPos) {
-            // Use cellular grid position for scaling with more stable transitions
-            vec2 gridPos = floor(cell / 4.0) * 4.0;
+            // PERFORMANCE OPTIMIZATION: Use distance from center to skip distant calculations completely
+            float distFromCenter = length(cell);
+            if (distFromCenter > 10.0) {
+                return step(0.7, noise(floor(cell * 0.2) * 5.0, seed));
+            }
+            
+            // Simplify grid position calculation - fewer operations
+            vec2 gridPos = floor(cell * 0.25) * 4.0;
             float gridValue = max(abs(gridPos.x), abs(gridPos.y)) * 0.25;
             float smoothGrid = smoothstep(0.0, 4.0, gridValue) * 0.5;
             
-            // More stable noise calculation with reduced variation
-            float stabilityNoise = noise(floor(cell / 8.0) * 8.0, seed) * 0.2; // Reduced from 0.3
-            float scaleVariation = 1.0 + (smoothGrid * 0.3 + stabilityNoise) * u_caScaleVariation * 0.5;
+            // Reduce noise calculation complexity
+            float stabilityNoise = noise(floor(cell * 0.125) * 8.0, seed) * 0.2;
+            float scaleVariation = 1.0 + smoothGrid * 0.2 * u_caScaleVariation;
             
-            // Pre-calculate scaled cell position with reduced variation
-            vec2 scaledCell = floor(cell * scaleVariation * 1.8) * 0.5; // Reduced from 2.0
-            vec2 id = floor(scaledCell * 2.0);
+            // Simplify cell scaling - fewer multiplications
+            vec2 scaledCell = floor(cell * scaleVariation) * 0.5;
+            vec2 id = floor(scaledCell);
             
-            // Generate base pattern with more defined edges
-            float basePattern = noise(floor(id * 0.5) * 2.0, seed + floor(depth));
-            float state = step(0.6, basePattern); // Increased threshold for more defined edges
+            // Generate base pattern with minimal calculations
+            float basePattern = noise(floor(id * 0.5), seed + floor(depth));
+            float state = step(0.6, basePattern);
             
-            // Geometric properties with reduced variation
+            // Simplified geometric properties
             float angle = atan(scaledCell.y, scaledCell.x);
-            float radius = length(scaledCell) * 1.8; // Reduced from 2.0
+            float radius = length(scaledCell);
             
-            // Get CA settings
-            vec4 caSettings = getCASettings(seed, floor(depth));
-            float dirBias = sin(angle * floor(depth + 1.0)) * caSettings.x;
+            // Simplified CA settings - use depth to select a pattern directly instead of complex lookup
+            float depthMod = mod(depth, 4.0);
+            float dirBias = 0.2 + depthMod * 0.05;
             
-            // CA simulation with fixed neighbors
-            float neighbors = 0.0;
-            
-            // Calculate neighbors using individual offsets with reduced influence
-            vec2 neighbor;
-            float neighborState;
-            
-            // Right neighbor
-            neighbor = floor(id + vec2(1.0, 0.0));
-            neighborState = step(0.5, noise(neighbor * 0.5, seed));
-            neighbors += neighborState * (1.0 + dirBias * 0.2);
-            
-            // Left neighbor
-            neighbor = floor(id + vec2(-1.0, 0.0));
-            neighborState = step(0.5, noise(neighbor * 0.5, seed));
-            neighbors += neighborState * (1.0 + dirBias * 0.2);
-            
-            // Top neighbor
-            neighbor = floor(id + vec2(0.0, 1.0));
-            neighborState = step(0.5, noise(neighbor * 0.5, seed));
-            neighbors += neighborState * (1.0 + dirBias * 0.2);
-            
-            // Bottom neighbor
-            neighbor = floor(id + vec2(0.0, -1.0));
-            neighborState = step(0.5, noise(neighbor * 0.5, seed));
-            neighbors += neighborState * (1.0 + dirBias * 0.2);
-            
-            // Rule application
-            float depthRule = floor(mod(depth * 1.618 + seed * 3.14159, 2.0));
-            
-            if (depthRule < 1.0) {
-                float surviveThreshold = caSettings.y + sin(angle * 2.0) * 0.1;
-                state = step(surviveThreshold - 0.1, neighbors) * 
-                        step(neighbors, surviveThreshold + 1.1) * state + 
-                        step(caSettings.z - 0.1, neighbors) * 
-                        step(neighbors, caSettings.z + 0.1) * (1.0 - state);
+            // Reduce neighbor calculations - only compute if really needed
+            if (length(id) < 8.0) {
+                // Simplified neighbor calculation
+                float neighbors = 0.0;
+                
+                // Only calculate 4 immediate neighbors instead of 8
+                vec2 neighbor;
+                float neighborState;
+                
+                // Right neighbor
+                neighbor = floor(id + vec2(1.0, 0.0));
+                neighborState = step(0.5, noise(neighbor * 0.5, seed));
+                neighbors += neighborState;
+                
+                // Left neighbor
+                neighbor = floor(id + vec2(-1.0, 0.0));
+                neighborState = step(0.5, noise(neighbor * 0.5, seed));
+                neighbors += neighborState;
+                
+                // Top neighbor
+                neighbor = floor(id + vec2(0.0, 1.0));
+                neighborState = step(0.5, noise(neighbor * 0.5, seed));
+                neighbors += neighborState;
+                
+                // Bottom neighbor
+                neighbor = floor(id + vec2(0.0, -1.0));
+                neighborState = step(0.5, noise(neighbor * 0.5, seed));
+                neighbors += neighborState;
+                
+                // Simplified rule application
+                float depthRule = floor(mod(depth, 2.0));
+                
+                if (depthRule < 1.0) {
+                    float surviveThreshold = 1.5 + sin(angle) * 0.1;
+                    state = step(surviveThreshold - 0.1, neighbors) * 
+                            step(neighbors, surviveThreshold + 1.1) * state + 
+                            step(2.0, neighbors) * 
+                            step(neighbors, 3.0) * (1.0 - state);
                 } else {
-                float edgeThreshold = caSettings.w + cos(radius) * 0.1;
-                state = step(edgeThreshold, abs(neighbors - 2.0 - dirBias));
+                    float edgeThreshold = 0.4 + cos(radius) * 0.1;
+                    state = step(edgeThreshold, abs(neighbors - 2.0));
+                }
             }
             
-            // Geometric pattern
+            // Simplified geometric pattern
             float geoPattern = smoothstep(0.4, 0.6, 
-                sin(radius * (3.0 + depth * 0.5) +    // Try 2.0 to 5.0
-                    angle * (4.0 + depth * 0.3) +     // Try 3.0 to 6.0
-                    depth + seed) * 0.5 + 0.5
+                sin(radius * (3.0 + depth * 0.5) + angle * (4.0 + depth * 0.3) + depth + seed) * 0.5 + 0.5
             );
             
-            // Blend CA result with geometric pattern based on depth
-            float blendFactor = 0.3 + 0.2 * sin(depth * 1.5);  // Try different base values 0.2 to 0.6
-            float finalPattern = mix(state, geoPattern, blendFactor);
-            
-            // Add detail noise if enabled
-            if (u_enableGlyphNoiseDetail) {
-                float detail = noise(scaledCell * (depth + 1.0) * 3.0, seed + depth);
-                return mix(finalPattern, detail, 0.15);
-            }
-            
-            return finalPattern;
+            // Simplified blend with geometric pattern
+            float blendFactor = 0.3 + 0.1 * sin(depth);
+            return mix(state, geoPattern, blendFactor);
         }
 
         void main() {
@@ -709,81 +710,82 @@
             
             // Process each depth level with minimal branching
             for (int depth = 0; depth < MAX_LOOP_DEPTH; depth++) {
-                // Break condition at the top to avoid unnecessary loop iterations
-                if (depth >= dynamicDepth) break;
+                // Break conditions at the top
+                if (depth >= dynamicDepth || color.a > 0.95) break;
                 
-                // Early exit if we've achieved sufficient opacity
-                if (color.a > 0.98) break;
-                
+                // Calculate depth-based parameters only once per depth level
                 depthNoiseValue = noise(animatedCoord * float(depth + 1), u_nS);
                 depthFactor = float(depth) / float(MAX_LOOP_DEPTH);
                 
-                // Skip early if noise threshold not met with a wider margin
-                if (depthNoiseValue <= threshold - 0.1) continue;
+                // Early rejection using simplified threshold test
+                if (depthNoiseValue < threshold || depthFactor > 0.9) continue;
                 
-                // Skip processing for areas with minimal contribution
-                if (depthFactor > 0.9 && depthNoiseValue < threshold + 0.1) continue;
-                
-                // Get glyph parameters with distance-based detail reduction
-                float currentSize = mix(0.3, 1.2, depthFactor) * u_cellSize;
+                // Quickly determine glyph size and check if we need to process this area
+                float currentSize = (0.3 + depthFactor * 0.9) * u_cellSize;
                 float distanceFromCenter = length(localPos);
                 
-                // Skip distant or small glyphs
-                if (distanceFromCenter > currentSize * 3.0) continue;
+                // Reject distant glyphs early with a simple distance check
+                if (distanceFromCenter > currentSize * 2.5) continue;
                 
-                // Rotate point to align with flow
-                vec2 rotatedP = vec2(
-                    localPos.x * fastCos(-flowAngle) - localPos.y * fastSin(-flowAngle),
-                    localPos.x * fastSin(-flowAngle) + localPos.y * fastCos(-flowAngle)
-                );
-                
-                // Glyph grid calculation with optimized flow influence
-                float flowStrength = length(flowDir);
-                float mappedOffset = mix(0.5, 1.2, flowStrength);
-                vec2 glyphCell = floor(rotatedP / currentSize + mappedOffset);
-                vec2 localGlyphPos = rotatedP - glyphCell * currentSize;
-                
-                // Get glyph pattern with distance-based detail reduction
-                float glyphNoise;
-                if (distanceFromCenter > currentSize * 2.0) {
-                    // Use simpler pattern for distant glyphs
-                    glyphNoise = step(0.5, noise(floor(glyphCell * 0.5) * 2.0, u_nS));
+                // Simplified rotation for flow alignment
+                vec2 rotatedP;
+                if (depth < 2) {
+                    // Only apply expensive rotation for the most visible depths
+                    rotatedP = vec2(
+                        localPos.x * cos(-flowAngle) - localPos.y * sin(-flowAngle),
+                        localPos.x * sin(-flowAngle) + localPos.y * cos(-flowAngle)
+                    );
                 } else {
-                    glyphNoise = getGlyphPattern(glyphCell, float(depth), u_nS, vTexCoord);
+                    // Use unrotated coordinates for higher depths
+                    rotatedP = localPos;
                 }
                 
-                // Simplified glyph checks
-                bool centerActive = abs(glyphCell.x) < 0.5 && abs(glyphCell.y) < 0.5;
-                bool noiseActive = length(glyphCell) < 1.5 && glyphNoise > 0.5;
-                bool lineActive = abs(localGlyphPos.x) < currentSize * 0.15 || abs(localGlyphPos.y) < currentSize * 0.15;
+                // Simplified glyph calculation
+                float mappedOffset = 0.5 + 0.5 * length(flowDir);
+                vec2 glyphCell = floor(rotatedP / currentSize + mappedOffset);
                 
-                bool insideGlyph = centerActive || noiseActive || lineActive;
+                // Simple validity check for pattern lookup
+                float pattern;
+                if (length(glyphCell) > 12.0) {
+                    // Use simplest pattern for distant cells
+                    pattern = step(0.5, noise(glyphCell, u_nS));
+                } else {
+                    // Use optimized glyph pattern for closer cells
+                    pattern = getGlyphPattern(glyphCell, float(depth), u_nS, vTexCoord);
+                }
                 
-                // Skip if not inside glyph
+                // Determine if cell is active with simplified checks
+                bool insideGlyph = pattern > 0.5 || 
+                                   (abs(glyphCell.x) < 0.5 && abs(glyphCell.y) < 0.5);
+                
+                // Skip empty areas
                 if (!insideGlyph) continue;
                 
-                // Color calculation with optimized blending
-                colorT = smoothstep(edge0, edge1, depthFactor + combinedNoise * 0.9);
+                // Restore original color blending logic
+                colorT = smoothstep(edge0, edge1, depthFactor + baseNoise * 0.9);
                 
+                // Get colors with minimal parameter passing
                 color1 = getColorFromPalette(colorT);
                 color2 = getColorFromPalette(1.0 - colorT);
                 
-                // Apply depth boost with reduced calculations
+                // Apply original depth boost
                 float depthBoost = 1.2 + (1.0 - depthFactor) * 0.8;
                 color1 *= depthBoost;
                 color2 *= depthBoost;
                 
-                enhancedColor1 = enhanceColor(color1, combinedNoise);
-                enhancedColor2 = enhanceColor(color2, combinedNoise);
+                // Always use the full enhancement for colors
+                enhancedColor1 = enhanceColor(color1, baseNoise);
+                enhancedColor2 = enhanceColor(color2, baseNoise);
                 
+                // Use the proper blendColors function for correct visual appearance
                 blendedColor = blendColors(enhancedColor1, enhancedColor2, blendFactor);
                 
-                // Add to final color with optimized alpha blending
+                // Blend with original alpha factor calculation for correct transparency
                 float alphaFactor = 1.0 - depthNoiseValue * 0.7;
-                if (alphaFactor > 0.01) { // Skip negligible contributions
-                color.rgb *= 1.0;
-                    color += vec4(blendedColor, 1.0) * alphaFactor;
-                }
+                
+                // Use original alpha blending
+                color.rgb = mix(color.rgb, blendedColor, alphaFactor);
+                color.a += alphaFactor * (1.0 - color.a);
             }
             
             // Final color check
