@@ -1089,6 +1089,24 @@
                             noRe();
                         }
                         break;
+                        
+                    // Resolution scaling controls
+                    case 'q':
+                        adaptiveScaling = !adaptiveScaling;
+                        console.log(`Adaptive resolution scaling: ${adaptiveScaling ? 'ON' : 'OFF'}`);
+                        break;
+                        
+                    case '[':
+                        renderScale = Math.max(minRenderScale, renderScale - 0.1);
+                        console.log(`Manual render scale: ${renderScale.toFixed(2)}`);
+                        setupOffscreenBuffer();
+                        break;
+                        
+                    case ']':
+                        renderScale = Math.min(maxRenderScale, renderScale + 0.1);
+                        console.log(`Manual render scale: ${renderScale.toFixed(2)}`);
+                        setupOffscreenBuffer();
+                        break;
                 }
             }
             
@@ -1257,7 +1275,8 @@
                 }
                 
                 reTO = setTimeout(() => {
-                    requestAnimationFrame(upCS);
+                    upCS();
+                    setupOffscreenBuffer();
                 }, 100);
             }
             
@@ -1345,6 +1364,11 @@
             }
             shader(tS);
             
+            // Initialize adaptive resolution scaling
+            // Start with full resolution and let the system adaptively decrease if needed
+            renderScale = 1.0;
+            adaptiveScaling = true;
+            
             if (!inscription_id) {
                 return;
             }
@@ -1402,7 +1426,7 @@
                     let h;
                     if (brightnessType === 'mid' && baseHue !== null) {
                         h = (baseHue + 0.5) % 1.0;
-} else {
+                    } else {
                         h = R.D();  
                     }
 
@@ -1495,19 +1519,17 @@
             setShaderUniform('u_sortStrength', soS);
             setShaderUniform('u_sortFrequency', soF);
             setShaderUniform('u_sortAnimSpeed', soA);
-            
-            // Original code didn't set these flags explicitly, so we'll remove them
-            // to maintain the original visual output
 
             scF = 30;
             upTC();
-
-            // Remove duplicate call to suEH() here
             
             stT = millis();  
             
             let cASV = R.N(1.5, 3.0);  
             setShaderUniform('u_caScaleVariation', cASV);
+            
+            // Add keyboard control for resolution scaling
+            console.log("Render scaling initialized. Press 'Q' to toggle adaptive scaling, '[' to decrease scale, ']' to increase scale");
             
             // Start the animation loop
             requestAnimationFrame(draw);
@@ -1550,9 +1572,11 @@
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
                 currentFPS = 1000 / (elapsed || 1);
                 fpsUpdateTime = now;
+                
+                // Update adaptive resolution based on performance
+                updateAdaptiveResolution(currentFPS);
             }
             
-            // Rest of the draw function remains unchanged
             // Performance monitoring and adaptation
             if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
                 lastPerformanceCheck = now;
@@ -1566,7 +1590,7 @@
                         targetDensity = 1.0;
                     } else if (currentFPS <= MID_FPS_THRESHOLD) {
                         targetDensity = 1.5;
-                    } else {
+            } else {
                         targetDensity = 2.0;
                     }
                     
@@ -1585,56 +1609,196 @@
                 performMemoryCleanup();
             }
             
-            // Update last frame time with adjustment to maintain consistent frame timing
+            // Update last frame time
             lastFrameTime = now;
-            
-            // Clear buffer with minimal overhead
-            clear();
-            background(0);  
             
             // Synchronized time handling
             if (isP) {
                 cuT = ((millis() - stT) / 1000.0);
             }
 
-            let scT = cuT; 
-
-            // Update uniform values efficiently with caching
-            setShaderUniform('u_bS', bS);
-            setShaderUniform('u_scaleFactor', scF);
-            setShaderUniform('u_translation', [tX, tY]);
-            setShaderUniform('u_resolution', [width, height]);
-            setShaderUniform('u_time', scT);
+            let scT = cuT;
             
-            // Calculate cellSize only once
-            const cellSize = (height / cV) * bS;
-            setShaderUniform('u_cellSize', cellSize);
-            
-            setShaderUniform('u_flowSpeed', fS);
-            setShaderUniform('u_luminosity', lum);
-            setShaderUniform('u_vibrancy', vib);
-            setShaderUniform('u_sortStrength', soS);
-            setShaderUniform('u_sortFrequency', soF);
-            setShaderUniform('u_sortAnimSpeed', soA);
-            
-            // Don't need to update pattern if it hasn't changed
-            setShaderUniform('u_currentPattern', cuP);
-            
-            // Calculate noise scale more efficiently
-            let cSP = height / cV;
-            let dySN = bN * (100.0 / floor(cSP)); 
-            setShaderUniform('u_noiseScale', dySN);
-
-            // Only update CA scale variation when needed
-            setShaderUniform('u_caScaleVariation', 0.5);
-            
-            // Revert to original quad drawing method to maintain exact visual output
-            beginShape();
-            vertex(0, 0, 0, 0, 0);
-            vertex(2, 0, 0, 1, 0);
-            vertex(2, 2, 0, 1, 1);
-            vertex(0, 2, 0, 0, 1);
-            endShape(CLOSE);
+            // If the buffer setup fails or resolution is near full, render directly
+            if (renderScale >= 0.99 || !setupOffscreenBuffer()) {
+                // If at nearly full resolution or buffer failed, render directly to canvas
+                clear();
+                background(0);
+                
+                // Use main shader
+                shader(tS);
+                
+                // Update uniforms on main shader
+                setShaderUniform('u_bS', bS);
+                setShaderUniform('u_scaleFactor', scF);
+                setShaderUniform('u_translation', [tX, tY]);
+                setShaderUniform('u_resolution', [width, height]);
+                setShaderUniform('u_time', scT);
+                
+                // Calculate cellSize only once
+                const cellSize = (height / cV) * bS;
+                setShaderUniform('u_cellSize', cellSize);
+                
+                setShaderUniform('u_flowSpeed', fS);
+                setShaderUniform('u_luminosity', lum);
+                setShaderUniform('u_vibrancy', vib);
+                setShaderUniform('u_sortStrength', soS);
+                setShaderUniform('u_sortFrequency', soF);
+                setShaderUniform('u_sortAnimSpeed', soA);
+                setShaderUniform('u_currentPattern', cuP);
+                
+                // Calculate noise scale
+                let cSP = height / cV;
+                let dySN = bN * (100.0 / floor(cSP)); 
+                setShaderUniform('u_noiseScale', dySN);
+                
+                // Draw directly to main canvas
+                beginShape();
+                vertex(-1, -1, 0, 0, 0);
+                vertex(1, -1, 0, 1, 0);
+                vertex(1, 1, 0, 1, 1);
+                vertex(-1, 1, 0, 0, 1);
+                endShape(CLOSE);
+                
+                // Display adaptive scaling message if needed
+                if (renderScale < 1.0) {
+                    fill(255);
+                    noStroke();
+                    textSize(12);
+                    textAlign(LEFT, BOTTOM);
+                    text(`Unable to use scaled rendering - using full resolution`, 10, height - 10);
+                }
+            } else {
+                // Get the buffer from setupOffscreenBuffer
+                const buffer = offscreenBuffer;
+                
+                // Make sure buffer exists and has shader before proceeding
+                if (!buffer || !bufferShader) {
+                    console.error("Buffer or shader is null, falling back to direct rendering");
+                    // Force full resolution for next frame
+                    renderScale = 1.0;
+                    
+                    // Render directly using main shader as fallback
+                    shader(tS);
+                    clear();
+                    background(0);
+                    
+                    // Draw a basic quad
+                    beginShape();
+                    vertex(-1, -1, 0, 0, 0);
+                    vertex(1, -1, 0, 1, 0);
+                    vertex(1, 1, 0, 1, 1);
+                    vertex(-1, 1, 0, 0, 1);
+                    endShape(CLOSE);
+                    return;
+                }
+                
+                // Clear the main canvas
+                clear();
+                background(0);
+                
+                // Clear the buffer
+                buffer.clear();
+                buffer.background(0);
+                
+                // Make sure shader is set on buffer
+                buffer.shader(bufferShader);
+                
+                // Calculate scaling adjustments
+                const scaledScF = scF * (1.0 / renderScale);
+                
+                // Use direct method calls instead of setUniform for more robust operation
+                try {
+                    // Basic rendering uniforms
+                    bufferShader.setUniform('u_bS', bS);
+                    bufferShader.setUniform('u_scaleFactor', scaledScF);
+                    bufferShader.setUniform('u_translation', [tX, tY]);
+                    bufferShader.setUniform('u_resolution', [buffer.width, buffer.height]);
+                    bufferShader.setUniform('u_time', scT);
+                    
+                    // Cell and rendering properties
+                    const cellSize = (buffer.height / cV) * bS;
+                    bufferShader.setUniform('u_cellSize', cellSize);
+                    bufferShader.setUniform('u_flowSpeed', fS);
+                    
+                    // Visual adjustments
+                    bufferShader.setUniform('u_luminosity', lum);
+                    bufferShader.setUniform('u_vibrancy', vib);
+                    bufferShader.setUniform('u_sortStrength', soS);
+                    bufferShader.setUniform('u_sortFrequency', soF);
+                    bufferShader.setUniform('u_sortAnimSpeed', soA);
+                    bufferShader.setUniform('u_currentPattern', cuP);
+                    
+                    // Noise parameters
+                    let cSP = buffer.height / cV;
+                    let dySN = bN * (100.0 / floor(cSP)); 
+                    bufferShader.setUniform('u_noiseScale', dySN);
+                    
+                    // Static parameters from setup
+                    bufferShader.setUniform('u_nS', nS);
+                    bufferShader.setUniform('u_rSS', rSS);
+                    bufferShader.setUniform('u_roA', radians(roA));
+                    bufferShader.setUniform('u_nOS', [nOX, nOY]);
+                    bufferShader.setUniform('u_amplitude', raA);
+                    bufferShader.setUniform('u_maxDepth', 6);
+                    bufferShader.setUniform('u_initialFreq', seF);
+                    bufferShader.setUniform('u_baseModulation', baM);
+                    bufferShader.setUniform('u_baseColor', sBaC);
+                    bufferShader.setUniform('u_isLightBackground', liBc);
+                    bufferShader.setUniform('u_randomColor1', rC1);
+                    bufferShader.setUniform('u_randomColor2', rC2);
+                    bufferShader.setUniform('u_randomColor3', rC3);
+                    bufferShader.setUniform('u_caScaleVariation', 0.5);
+                    
+                    // Optional toggle uniforms (with safe defaults)
+                    bufferShader.setUniform('u_enableDomainWarp', true);
+                    bufferShader.setUniform('u_enableLayeredNoise', true);
+                    bufferShader.setUniform('u_enableFlowFields', true);
+                    bufferShader.setUniform('u_enableGlyphNoise', true);
+                    bufferShader.setUniform('u_enableGridDistort', true);
+                    bufferShader.setUniform('u_enableGlyphNoiseDetail', true);
+                    
+                    // Render to the offscreen buffer
+                    buffer.beginShape();
+                    buffer.vertex(-1, -1, 0, 0, 0);
+                    buffer.vertex(1, -1, 0, 1, 0);
+                    buffer.vertex(1, 1, 0, 1, 1);
+                    buffer.vertex(-1, 1, 0, 0, 1);
+                    buffer.endShape(CLOSE);
+                    
+                    // Now draw the buffer to the main canvas, scaling it up
+                    texture(buffer);
+                    beginShape();
+                    vertex(-1, -1, 0, 0, 0);
+                    vertex(1, -1, 0, 1, 0);
+                    vertex(1, 1, 0, 1, 1);
+                    vertex(-1, 1, 0, 0, 1);
+                    endShape(CLOSE);
+                    
+                    // Display current resolution scale and FPS
+                    if (renderScale < 1.0) {
+                        fill(255);
+                        noStroke();
+                        textSize(12);
+                        textAlign(LEFT, BOTTOM);
+                        text(`Scale: ${renderScale.toFixed(2)} | FPS: ${currentFPS.toFixed(1)}`, 10, height - 10);
+                    }
+                } catch (err) {
+                    console.error("Error setting shader uniforms:", err);
+                    // Fall back to direct rendering on error
+                    renderScale = 1.0;
+                    
+                    clear();
+                    background(0);
+                    shader(tS);
+                    beginShape();
+                    vertex(-1, -1, 0, 0, 0);
+                    vertex(1, -1, 0, 1, 0);
+                    vertex(1, 1, 0, 1, 1);
+                    vertex(-1, 1, 0, 0, 1);
+                    endShape(CLOSE);
+                }
+            }
             
             if (isR && (millis() - reST > reDu)) {
                 noRe();
@@ -1656,7 +1820,7 @@
                 case 0: // 3:4 aspect ratio
                     if (wiR > 0.75) {
                         // Width is relatively larger, constrain by height
-                        neH = windowHeight;
+                    neH = windowHeight;
                         neW = windowHeight * 0.75; // 3:4 ratio (width:height)
                     } else {
                         // Height is relatively larger, constrain by width
@@ -1717,18 +1881,10 @@
         
         let reTO;
         function windowResized() {
-            // Cancel previous timeout to avoid memory leaks
-            if (reTO) {
-            clearTimeout(reTO);
-                reTO = null;
-            }
+            upCS();
             
-            // Use requestAnimationFrame for smoother updates and less performance impact
-            // Debounce with setTimeout as a backup for consistent timing
-            reTO = setTimeout(() => {
-                // Use requestAnimationFrame to align with browser's render cycle
-                requestAnimationFrame(upCS);
-            }, 100);
+            // Ensure offscreen buffer is recreated with the new canvas dimensions
+            setupOffscreenBuffer();
         }
 
         
@@ -1870,6 +2026,153 @@
             // We'll set up a better vertex buffer in a real implementation
             // For p5.js integration, we'll rely on p5's own buffer management
             // But we can optimize how we use it
+        }
+
+        // Performance optimization variables
+        let renderScale = 1.0;                  // Scale factor for internal rendering (0.5 = half resolution)
+        let minRenderScale = 0.25;              // Minimum render scale (maximum performance)
+        let maxRenderScale = 1.0;               // Maximum render scale (maximum quality)
+        let adaptiveScaling = true;             // Automatically adjust render scale based on performance
+        let targetFPS = 30;                     // Target FPS for adaptive scaling
+        let lowFPSThreshold = 20;               // FPS threshold to decrease resolution
+        let highFPSThreshold = 40;              // FPS threshold to increase resolution
+        let scaleAdjustRate = 0.05;             // How quickly to adjust render scale
+        let scaleChangeInterval = 2000;         // Minimum time between scale changes (ms)
+        let lastScaleChange = 0;                // Timestamp of last scale change
+        let offscreenBuffer = null;             // Offscreen buffer for rendering at reduced resolution
+        let bufferShader = null;                // Shader instance for offscreen buffer
+
+        // Create or resize the offscreen buffer based on current canvas size and render scale
+        function setupOffscreenBuffer() {
+            if (renderScale >= 0.99) {
+                // Skip buffer setup if we're at full resolution
+                return false;
+            }
+            
+            try {
+                const scaledWidth = Math.max(10, Math.floor(width * renderScale));
+                const scaledHeight = Math.max(10, Math.floor(height * renderScale));
+                
+                // Check if we should create/resize buffer
+                const needsNewBuffer = !offscreenBuffer || 
+                                    offscreenBuffer.width !== scaledWidth || 
+                                    offscreenBuffer.height !== scaledHeight ||
+                                    !bufferShader;
+                
+                if (needsNewBuffer) {
+                    console.log(`Setting up offscreen buffer: ${scaledWidth}x${scaledHeight}, scale: ${renderScale.toFixed(2)}`);
+                    
+                    // Clean up existing buffer if there is one
+                    if (offscreenBuffer) {
+                        try {
+                            offscreenBuffer.remove();
+                        } catch (e) {
+                            console.warn("Error removing old buffer:", e);
+                        }
+                        offscreenBuffer = null;
+                        bufferShader = null;
+                    }
+                    
+                    // Create a new p5 graphics buffer at the scaled size
+                    try {
+                        offscreenBuffer = createGraphics(scaledWidth, scaledHeight, WEBGL);
+                        
+                        if (!offscreenBuffer || !offscreenBuffer.GL) {
+                            console.error("Failed to create offscreen buffer with WebGL context");
+                            offscreenBuffer = null;
+                            return false;
+                        }
+                        
+                        // Apply same WebGL settings to offscreen buffer
+                        const gl = offscreenBuffer.GL;
+                        gl.disable(gl.DEPTH_TEST);
+                        gl.disable(gl.CULL_FACE);
+                        gl.disable(gl.DITHER);
+                        gl.disable(gl.STENCIL_TEST);
+                        gl.enable(gl.BLEND);
+                        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                        gl.hint(gl.GENERATE_MIPMAP_HINT, gl.FASTEST);
+                        
+                        // Create a new shader instance for the offscreen buffer context
+                        const vertSrc = document.getElementById('vertex-shader').textContent;
+                        const fragSrc = document.getElementById('fragment-shader').textContent;
+                        
+                        bufferShader = offscreenBuffer.createShader(vertSrc, fragSrc);
+                        
+                        if (!bufferShader) {
+                            console.error("Created buffer shader is null");
+                            offscreenBuffer = null;
+                            return false;
+                        }
+                        
+                        // Test the shader by setting it once
+                        offscreenBuffer.shader(bufferShader);
+                        offscreenBuffer.noStroke();
+                        
+                        console.log("Successfully created offscreen buffer shader");
+                    } catch (createError) {
+                        console.error("Error creating buffer or shader:", createError);
+                        offscreenBuffer = null;
+                        bufferShader = null;
+                        return false;
+                    }
+                }
+                
+                return offscreenBuffer !== null && bufferShader !== null;
+            } catch (error) {
+                console.error("Unexpected error in setupOffscreenBuffer:", error);
+                offscreenBuffer = null;
+                bufferShader = null;
+                return false;
+            }
+        }
+
+        // Adjust render scale based on current FPS performance
+        function updateAdaptiveResolution(currentFPS) {
+            // Only adjust resolution periodically
+            const now = performance.now();
+            if (now - lastScaleChange < scaleChangeInterval) {
+                return;
+            }
+            
+            // Skip if adaptive scaling is disabled
+            if (!adaptiveScaling) {
+                return;
+            }
+            
+            let newScale = renderScale;
+            
+            // If FPS is too low, reduce resolution to improve performance
+            if (currentFPS < lowFPSThreshold) {
+                newScale = Math.max(minRenderScale, renderScale - scaleAdjustRate);
+            } 
+            // If FPS is high enough, increase resolution for better quality
+            else if (currentFPS > highFPSThreshold && renderScale < maxRenderScale) {
+                newScale = Math.min(maxRenderScale, renderScale + scaleAdjustRate);
+            }
+            
+            // Only update if scale actually changed
+            if (newScale !== renderScale) {
+                console.log(`Adjusting render scale: ${renderScale.toFixed(2)} -> ${newScale.toFixed(2)} (FPS: ${currentFPS.toFixed(1)})`);
+                renderScale = newScale;
+                lastScaleChange = now;
+                
+                // If previous attempts to create a buffer failed and we're decreasing scale further,
+                // just jump to a much lower scale to avoid many small decreases that all fail
+                if (offscreenBuffer === null && newScale < 0.8) {
+                    renderScale = 0.5; // Jump to 50% to avoid multiple small adjustments
+                    console.log("Previous buffer creation failed, jumping to 50% scale");
+                }
+                
+                // Try setting up the buffer with new scale - returns true if successful
+                const bufferSuccess = setupOffscreenBuffer();
+                
+                // If buffer setup failed, revert to full resolution
+                if (!bufferSuccess && renderScale < 1.0) {
+                    console.log("Failed to create offscreen buffer, reverting to full resolution");
+                    renderScale = 1.0;
+                }
+            }
         }
     </script>
   </body>
