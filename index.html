@@ -799,7 +799,7 @@
         let bS = 1.0;     
         const cV = 6;  
         let tS;
-        let dM = 0;
+        let dM = 3;  // Initially set to 3 which is fullscreen aspect ratio
         let cS;      
         let bN = 0.002;  
         let nS;
@@ -856,14 +856,14 @@
             if (isTabVisible) {
                 // Reset frame time tracking to avoid jumps
                 lastFrameTime = performance.now();
-                // Restart animation if paused
+                // Restart animation if animation is enabled
                 if (isP) {
                     requestAnimationFrame(draw);
                 }
             }
             
             // Take opportunity to clean up memory when tab is hidden
-            if (!isTabVisible && !isMemoryCleanupScheduled) {
+            if (!isTabVisible) {
                 performMemoryCleanup();
             }
         }
@@ -886,9 +886,9 @@
                 recordingChunkIndex = 0;
                 
                 // Force garbage collection on WebGL if possible
-                if (glContext) {
+                if (glContext && !isTabVisible) {
                     // Attempt to reduce GL memory usage by reducing texture size temporarily
-                    // This will be restored on next draw
+                    // Only do this when tab isn't visible to avoid affecting visible rendering
                     const tempDensity = pixelDensity();
                     if (tempDensity > 1) {
                         pixelDensity(1);
@@ -900,7 +900,7 @@
                 lastMemoryCleanup = performance.now();
                 isMemoryCleanupScheduled = false;
                 
-                // If tab visible, request a frame to restore rendering
+                // If tab is visible and animation is playing, restart the animation loop
                 if (isTabVisible && isP) {
                     requestAnimationFrame(draw);
                 }
@@ -950,11 +950,9 @@
 
 
         function upTC() {
-            let viW = width / scF;
-            let viH = height / scF;
-            
-            tX = -width/2 + (viW * scF/2);
-            tY = -height/2 + (viH * scF/2);
+            // Keep the current translation coordinates instead of recalculating
+            // This maintains the user's current view when changing zoom level
+            // Don't override tX and tY here, we want to keep the current position
         }
 
         function geT() {
@@ -1030,23 +1028,27 @@
                 if (keyState.has(e.key)) return;
                 keyState.add(e.key);
                 
+                console.log('Key pressed:', e.key); // Debug logging
+                
                 switch(e.key.toLowerCase()) {
                     case 'a':
-                        dM = (dM + 1) % 3;
+                        dM = (dM + 1) % 4; // Changed from 3 to 4 modes
                         requestAnimationFrame(upCS);
                         break;
                         
                     case 'r':
-                        tX = iTX;
-                        tY = iTY;
+                        // Reset position and scale - this should still provide a full reset
+                        tX = -width/2;
+                        tY = -height/2;
                         scF = 30;
-                        upTC();
                         break;
                         
                     case 's':
                         isP = !isP;
                         if (isP) {
                             stT = millis() * 0.1;
+                            // Ensure draw loop restarts if we're enabling playback
+                            requestAnimationFrame(draw);
                         } else {
                             cuT = (millis() - stT) / 1000.0;
                         }
@@ -1077,7 +1079,7 @@
                         } else {
                             scF = 30;
                         }
-                        upTC();
+                        // No need to call upTC here as we want to maintain position
                         break;
                     
                     case 'k':
@@ -1112,17 +1114,24 @@
             }
             
             function handleMouseMove(e) {
-                // Throttle move events
-                const now = performance.now();
-                if (isDragging && now - lastMoveTime > MOVE_THROTTLE) {
-                    const dx = e.clientX - startX;
-                    const dy = e.clientY - startY;
-                    
-                    // Apply translation directly with optimized calculation
-                    tX = startTX - dx * (scF / 15);
-                    tY = startTY + dy * (scF / 15);
-                    
-                    lastMoveTime = now;
+                // Only process if dragging
+                if (!isDragging) return;
+                
+                // Calculate accurate pan distance with proper scaling
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                // Apply translation with a smooth scaling factor based on current zoom
+                // This ensures consistent speed regardless of zoom level
+                const panScale = scF / 15;
+                
+                // Apply translation with smooth interpolation for natural feel
+                tX = startTX - dx * panScale;
+                tY = startTY + dy * panScale;
+                
+                // Force redraw for smooth motion even when not animating
+                if (!isP && rafID === null) {
+                    rafID = requestAnimationFrame(draw);
                 }
             }
             
@@ -1130,6 +1139,11 @@
                 if (isDragging) {
                     isDragging = false;
                     canvas.style.cursor = 'grab';
+                    
+                    // Force final redraw for smoothness
+                    if (!isP && rafID === null) {
+                        rafID = requestAnimationFrame(draw);
+                    }
                 }
             }
             
@@ -1166,18 +1180,15 @@
                         isP = !isP;
                         if (isP) {
                             stT = millis() * 0.1;
+                            requestAnimationFrame(draw);
                         } else {
                             cuT = (millis() - stT) / 1000.0;
                         }
                         isDragging = false; // Prevent drag after double tap
                     } else if (tapCount === 3) {
-                        // Triple tap - change scale
-                        if (scF === 30) {
-                            scF = 10;
-                        } else {
-                            scF = 30;
-                        }
-                        upTC();
+                        // Triple tap - cycle aspect ratio
+                        dM = (dM + 1) % 4; // Changed from 3 to 4 modes
+                        requestAnimationFrame(upCS);
                         tapCount = 0;
                         isDragging = false; // Prevent drag after triple tap
                     }
@@ -1203,18 +1214,22 @@
             function handleTouchMove(e) {
                 if (!isDragging || e.touches.length !== 1) return;
                 
-                // Throttle move events
-                const now = performance.now();
-                if (now - lastMoveTime > MOVE_THROTTLE) {
-                    const touch = e.touches[0];
-                    const dx = touch.clientX - startX;
-                    const dy = touch.clientY - startY;
-                    
-                    // Apply optimized translation
-                    tX = startTX - dx * (scF / 15);
-                    tY = startTY + dy * (scF / 15);
-                    
-                    lastMoveTime = now;
+                const touch = e.touches[0];
+                
+                // Calculate accurate pan distance with proper scaling
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+                
+                // Apply translation with a smooth scaling factor based on current zoom
+                const panScale = scF / 15;
+                
+                // Apply translation with smooth interpolation
+                tX = startTX - dx * panScale;
+                tY = startTY + dy * panScale;
+                
+                // Force redraw for smooth motion even when not animating
+                if (!isP && rafID === null) {
+                    rafID = requestAnimationFrame(draw);
                 }
                 
                 // Prevent default to avoid scrolling
@@ -1223,6 +1238,11 @@
             
             function handleTouchEnd(e) {
                 isDragging = false;
+                
+                // Force final redraw for smoothness
+                if (!isP && rafID === null) {
+                    rafID = requestAnimationFrame(draw);
+                }
                 
                 // Don't reset tap state here, as we want to track multi-taps
                 // But ensure we prevent default for consistency
@@ -1336,7 +1356,7 @@
             
             upCS();
             
-            // Setup event handlers with optimized implementation
+            // Setup event handlers with optimized implementation - CALL ONLY ONCE
             suEH();
             
             nOX = R.I(0,2000)
@@ -1482,13 +1502,21 @@
             scF = 30;
             upTC();
 
-            suEH();
-
+            // Remove duplicate call to suEH() here
+            
             stT = millis();  
             
             let cASV = R.N(1.5, 3.0);  
             setShaderUniform('u_caScaleVariation', cASV);
+            
+            // Start the animation loop
+            requestAnimationFrame(draw);
         }
+
+        // Add these variables near the top of the script
+        let rafID = null;
+        let lastRenderTime = 0;
+        const MIN_RENDER_INTERVAL = 16.667; // ~60fps
 
         function draw() {
             // Skip rendering when tab is not visible
@@ -1496,15 +1524,27 @@
                 return;
             }
             
+            // Cancel any pending animation frame to avoid duplicates
+            if (rafID !== null) {
+                cancelAnimationFrame(rafID);
+                rafID = null;
+            }
+            
             // Request next frame early for better performance
-            if (isP) {
-                requestAnimationFrame(draw);
+            if (isP || isDragging) {
+                rafID = requestAnimationFrame(draw);
             }
             
             // Frame rate control for consistent animation
             const now = performance.now();
             const elapsed = now - lastFrameTime;
-            const frameInterval = 1000 / TARGET_FRAMERATE;
+            
+            // Apply time-based throttling for smoother rendering
+            if (now - lastRenderTime < MIN_RENDER_INTERVAL) {
+                return;
+            }
+            
+            lastRenderTime = now;
             
             // FPS Calculation
             if (now - fpsUpdateTime > FPS_UPDATE_INTERVAL) {
@@ -1512,6 +1552,7 @@
                 fpsUpdateTime = now;
             }
             
+            // Rest of the draw function remains unchanged
             // Performance monitoring and adaptation
             if (now - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
                 lastPerformanceCheck = now;
@@ -1544,13 +1585,8 @@
                 performMemoryCleanup();
             }
             
-            // Skip frame if we're rendering too quickly
-            if (elapsed < frameInterval) {
-                return;
-            }
-            
             // Update last frame time with adjustment to maintain consistent frame timing
-            lastFrameTime = now - (elapsed % frameInterval);
+            lastFrameTime = now;
             
             // Clear buffer with minimal overhead
             clear();
@@ -1559,21 +1595,6 @@
             // Synchronized time handling
             if (isP) {
                 cuT = ((millis() - stT) / 1000.0);
-            }
-
-            if (mouseIsPressed && mouseButton === LEFT) {
-                if (pMX !== undefined && pMY !== undefined) {
-                    let deltaX = mouseX - pMX;
-                    let deltaY = mouseY - pMY;
-                    
-                    tX -= deltaX * (scF / 5);
-                    tY += deltaY * (scF / 5);
-                }
-                pMX = mouseX;
-                pMY = mouseY;
-            } else {
-                pMX = undefined;
-                pMY = undefined;
             }
 
             let scT = cuT; 
@@ -1626,13 +1647,25 @@
             const wiR = windowWidth / windowHeight;
             let neW, neH;
             
+            // Save current position before resize
+            const currentTX = tX;
+            const currentTY = tY;
+            const currentScaleFactor = scF;
+            
             switch(dM) {
-                case 0: 
-                    neW = windowWidth;
-                    neH = windowHeight;
+                case 0: // 3:4 aspect ratio
+                    if (wiR > 0.75) {
+                        // Width is relatively larger, constrain by height
+                        neH = windowHeight;
+                        neW = windowHeight * 0.75; // 3:4 ratio (width:height)
+                    } else {
+                        // Height is relatively larger, constrain by width
+                        neW = windowWidth;
+                        neH = windowWidth * (4/3); // 4:3 ratio (height:width)
+                    }
                     break;
                 
-                case 1: 
+                case 1: // 1:1 square aspect ratio
                     if (wiR > 1) {
                         neH = windowHeight;
                         neW = windowHeight;
@@ -1642,27 +1675,42 @@
                     }
                     break;
                 
-                case 2: 
-                    if (wiR > 2/3) {
+                case 2: // 4:3 aspect ratio
+                    if (wiR > (4/3)) {
+                        // Width is relatively larger, constrain by height
                         neH = windowHeight;
-                        neW = (windowHeight * 2) / 3;
+                        neW = windowHeight * (4/3); // 4:3 ratio (width:height)
                     } else {
+                        // Height is relatively larger, constrain by width
                         neW = windowWidth;
-                        neH = (windowWidth * 3) / 2;
+                        neH = windowWidth * 0.75; // 3:4 ratio (height:width)
                     }
+                    break;
+                
+                case 3: // Fullscreen (use entire window)
+                    neW = windowWidth;
+                    neH = windowHeight;
                     break;
             }
            
             if (width !== neW || height !== neH) {
+                // Calculate relative position for scaling
+                const relXPercent = (currentTX + width/2) / width;
+                const relYPercent = (currentTY + height/2) / height;
+                
                 resizeCanvas(neW, neH);
                 
-                tX = -neW/2;
-                tY = -neH/2;
+                // Maintain relative position after resize
+                tX = (relXPercent * neW) - neW/2;
+                tY = (relYPercent * neH) - neH/2;
                 
                 // Use cached canvas reference instead of querying the DOM again
                 if (canvasElement) {
                     canvasElement.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)';
                 }
+                
+                // Force a redraw to update the canvas
+                requestAnimationFrame(draw);
             }
         }
 
